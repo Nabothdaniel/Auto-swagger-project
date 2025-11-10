@@ -1,0 +1,56 @@
+{
+  "name": "express-auto-swagger",
+  "version": "1.0.0",
+  "description": "Automatically generate OpenAPI/Swagger documentation from Express routes with TypeScript support",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --watch -r ts-node/register ./server.ts",
+    "prepublishOnly": "npm run build",
+    "test": "jest",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write \"**/*.{ts,json,md}\"",
+    "prepare": "husky install"
+  },
+  "keywords": [
+    "express",
+    "swagger",
+    "openapi",
+    "documentation",
+    "typescript",
+    "auto-generate"
+  ],
+  "author": "Daniel Smith",
+  "license": "MIT",
+  "dependencies": {
+    "swagger-ui-express": "^5.0.1",
+    "ts-morph": "^27.0.2"
+  },
+  "peerDependencies": {
+    "express": ">=4.17.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/jest": "^29.5.0",
+    "@types/swagger-ui-express": "^4.1.8",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.40.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "husky": "^8.0.3",
+    "jest": "^29.5.0",
+    "lint-staged": "^15.0.2",
+    "prettier": "^3.0.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}
