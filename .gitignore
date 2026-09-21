@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
 
 # Build outputs
@@ -8,6 +7,7 @@ dist/
 build/
 *.js
 *.js.map
+!jest.config.js
 
 # Environment variables
 .env
@@ -33,3 +33,6 @@ yarn-error.log*
 
 # Test coverage
 coverage/
+
+# Local agent prompts and scratch notes
+*-agent-prompt.md

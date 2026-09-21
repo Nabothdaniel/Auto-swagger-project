@@ -1,6 +1,6 @@
 /**
  * 
- * import { AutoSwagger } from './express-auto-swagger';
+ * import { AutoSwagger } from '@nabothdaniel/express-auto-doc-ts';
 
 const swagger = new AutoSwagger(app, {
   title: 'My API',

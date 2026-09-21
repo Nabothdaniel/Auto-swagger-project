@@ -1,0 +1,43 @@
+name: Bug report
+description: The generated OpenAPI document or the scanner behaves incorrectly.
+labels: [bug]
+body:
+  - type: textarea
+    id: route
+    attributes:
+      label: Minimal route and types
+      description: The smallest Express route and TypeScript types that reproduce the problem.
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Generated OpenAPI output
+      description: The relevant fragment of the generated document.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+    validations:
+      required: true
+  - type: input
+    id: express-version
+    attributes:
+      label: Express version

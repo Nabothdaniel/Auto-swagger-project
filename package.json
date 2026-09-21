@@ -1,16 +1,33 @@
 {
-  "name": "express-auto-swagger",
-  "version": "1.0.0",
+  "name": "@nabothdaniel/express-auto-doc-ts",
+  "version": "1.1.0",
   "description": "Automatically generate OpenAPI/Swagger documentation from Express routes with TypeScript support",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nabothdaniel/Auto-swagger-project.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Nabothdaniel/Auto-swagger-project/issues"
+  },
+  "homepage": "https://github.com/Nabothdaniel/Auto-swagger-project#readme",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist"
   ],
   "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prebuild": "npm run clean",
     "build": "tsc",
     "dev": "node --watch -r ts-node/register ./server.ts",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run lint && npm run build && npm test -- --runInBand && npm pack --dry-run",
     "test": "jest",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write \"**/*.{ts,json,md}\"",
@@ -24,8 +41,11 @@
     "typescript",
     "auto-generate"
   ],
-  "author": "Daniel Smith",
+  "author": "Daniel Naboth Agriga",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "swagger-ui-express": "^5.0.1",
     "ts-morph": "^27.0.2"
@@ -34,6 +54,8 @@
     "express": ">=4.17.1"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
     "@types/express": "^5.0.5",
     "@types/jest": "^29.5.0",
     "@types/swagger-ui-express": "^4.1.8",
@@ -51,6 +73,6 @@
     "typescript": "^5.9.3"
   },
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   }
 }

@@ -4,12 +4,12 @@
  *
  * @class AutoSwagger
  * @extends {EventEmitter}
- * @version 1.0.0
+ * @version 1.1.0
  *
  * @example
  * ```typescript
  * import express from 'express';
- * import { AutoSwagger } from 'express-auto-swagger';
+ * import { AutoSwagger } from '@nabothdaniel/express-auto-doc-ts';
  *
  * const app = express();
  *
@@ -43,6 +43,9 @@ import { AutoSwaggerError } from './errors';
 import { CacheManager } from './cache';
 import type { AutoSwaggerOptions, RouteInfo, SwaggerSpec } from './types';
 
+export { AutoSwaggerError } from './errors';
+export type { ApiVersion, AutoSwaggerOptions, RouteInfo, ServerConfig, SwaggerSpec } from './types';
+
 // ============================================================================
 // Core Class
 // ============================================================================
@@ -51,7 +54,11 @@ export class AutoSwagger extends EventEmitter {
   private app: Express;
   private options: Required<AutoSwaggerOptions>;
   private watcherInitialized = false;
+  private watchers: fs.FSWatcher[] = [];
+  private refreshTimer?: NodeJS.Timeout;
   private lastScanTime = 0;
+  private swaggerUiInitialized = false;
+  private currentSpec: SwaggerSpec | null = null;
   private logger: Logger;
   private cache: CacheManager;
 
@@ -153,7 +160,7 @@ export class AutoSwagger extends EventEmitter {
       this.emit('initialized', { routes, interfaces });
     } catch (error) {
       this.emit('error', error);
-      console.error('❌ Failed to initialize AutoSwagger:', error);
+      console.error('Failed to initialize AutoSwagger:', error);
       throw error;
     }
   }
@@ -163,10 +170,24 @@ export class AutoSwagger extends EventEmitter {
    */
   async refresh(): Promise<void> {
     if (this.options.debugMode) {
-      console.log('\n🔄 Refreshing documentation...\n');
+      console.log('\nRefreshing documentation...\n');
     }
     this.cache.clearCache();
     await this.initialize();
+  }
+
+  /**
+   * Stop file watchers and pending refreshes.
+   */
+  close(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
+
+    this.watchers.forEach((watcher) => watcher.close());
+    this.watchers = [];
+    this.watcherInitialized = false;
   }
 
   /**
@@ -220,10 +241,17 @@ export class AutoSwagger extends EventEmitter {
   }
 
   private serveSwaggerUI(spec: SwaggerSpec): void {
+    this.currentSpec = spec;
+    if (this.swaggerUiInitialized) return;
+
     this.app.use(
       this.options.docsRoute,
       swaggerUi.serve,
-      swaggerUi.setup(spec, {
+      (req: any, _res: any, next: () => void) => {
+        req.swaggerDoc = this.currentSpec;
+        next();
+      },
+      swaggerUi.setup(undefined, {
         customCss: '.swagger-ui .topbar { display: none }',
         customSiteTitle: this.options.title,
         swaggerOptions: {
@@ -231,6 +259,7 @@ export class AutoSwagger extends EventEmitter {
         },
       })
     );
+    this.swaggerUiInitialized = true;
   }
 
   private setupFileWatcher(): void {
@@ -240,25 +269,37 @@ export class AutoSwagger extends EventEmitter {
 
     searchDirs.forEach((dir) => {
       if (fs.existsSync(dir)) {
-        fs.watch(dir, { recursive: true }, (_event, filename) => {
+        const watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
           if (filename && /\.(ts|js)$/.test(filename)) {
-            // Debounce: only refresh once per second
             const now = Date.now();
-            if (now - this.lastScanTime > 1000) {
-              this.lastScanTime = now;
+            if (now - this.lastScanTime <= 1000) return;
+
+            this.lastScanTime = now;
+            if (this.refreshTimer) clearTimeout(this.refreshTimer);
+            this.refreshTimer = setTimeout(() => {
+              this.refreshTimer = undefined;
               if (this.options.debugMode) {
-                console.log(`📝 File changed: ${filename}, refreshing docs...`);
+                console.log(`File changed: ${filename}, refreshing docs...`);
               }
-              this.refresh();
-            }
+              this.refresh().catch((error) => {
+                this.logger.error('Failed to refresh documentation after file change', error);
+              });
+            }, 100);
+            this.refreshTimer.unref();
           }
         });
+
+        watcher.on('error', (error) => {
+          this.logger.error(`File watcher failed for ${dir}`, error);
+        });
+        watcher.unref();
+        this.watchers.push(watcher);
       }
     });
 
     this.watcherInitialized = true;
     if (this.options.debugMode) {
-      console.log('👀 File watcher enabled');
+      console.log('File watcher enabled');
     }
   }
 
@@ -275,12 +316,12 @@ export class AutoSwagger extends EventEmitter {
   }
 
   private printSummary(routes: RouteInfo[], interfaces: Map<string, any>): void {
-    console.log('\n✅ Swagger Documentation Generated');
-    console.log(`📚 Documentation: ${this.options.docsRoute}`);
-    console.log(`🛣️  Routes: ${routes.length}`);
+    console.log('\nSwagger Documentation Generated');
+    console.log(`Documentation: ${this.options.docsRoute}`);
+    console.log(`Routes: ${routes.length}`);
 
     if (this.options.apiVersions.length > 0) {
-      console.log('\n📦 API Versions:');
+      console.log('\nAPI Versions:');
       this.options.apiVersions.forEach((v) => {
         console.log(`   v${v.version} - ${v.basePath}`);
       });
@@ -295,7 +336,7 @@ export class AutoSwagger extends EventEmitter {
       });
 
     if (interfaces.size > 0) {
-      console.log(`\n📝 Interfaces: ${interfaces.size}`);
+      console.log(`\nInterfaces: ${interfaces.size}`);
     }
 
     console.log('\n');
@@ -328,7 +369,7 @@ class RouteScanner {
 
     for (const dir of searchDirs) {
       if (this.options.debugMode) {
-        console.log(`🔍 Searching: ${dir}`);
+        console.log(`Searching: ${dir}`);
       }
       const files = this.findFiles(dir);
       if (files.length > 0) {
@@ -339,18 +380,18 @@ class RouteScanner {
     }
 
     if (routeFiles.length === 0) {
-      if (this.options.routesDir === './nonexistent') {
+      if (this.options.routesDir && !fs.existsSync(searchDirs[0])) {
         throw new AutoSwaggerError(
-          'Invalid route directory',
+          `Route directory not found: ${searchDirs[0]}`,
           AutoSwaggerError.CODES.ROUTE_SCAN_ERROR
         );
       }
-      console.warn('⚠️  No route files found');
+      console.warn('No route files found');
       return [];
     }
 
     if (this.options.debugMode) {
-      console.log(`\n✅ Found ${routeFiles.length} file(s) in ${foundDir}\n`);
+      console.log(`\nFound ${routeFiles.length} file(s) in ${foundDir}\n`);
     }
 
     const allRoutes: RouteInfo[] = [];
@@ -448,12 +489,12 @@ class RouteScanner {
         });
 
         if (this.options.debugMode) {
-          console.log(`  ✓ Found: ${method.toUpperCase()} ${routePath}`);
+          console.log(`  Found: ${method.toUpperCase()} ${routePath}`);
         }
       }
     } catch (error) {
       if (this.options.debugMode) {
-        console.log(`  ✗ Could not read: ${path.basename(filePath)}`);
+        console.log(`  Could not read: ${path.basename(filePath)}`);
       }
     }
 
@@ -499,6 +540,9 @@ class InterfaceScanner {
         const project = new Project({
           skipAddingFilesFromTsConfig: true,
           skipFileDependencyResolution: true,
+          compilerOptions: {
+            strictNullChecks: true,
+          },
         });
 
         const files = this.findTsFiles(dir);
@@ -509,18 +553,18 @@ class InterfaceScanner {
         sourceFiles.forEach((file) => {
           try {
             file.getInterfaces().forEach((iface) => {
-              const name = iface.getName();
-              if (this.isValidInterfaceName(name)) {
-                const schema = this.parseInterface(iface);
-                interfaces.set(name, schema);
-
-                if (this.options.debugMode) {
-                  console.log(`  📋 Interface: ${name}`);
-                }
-              }
+              this.addSchema(interfaces, iface.getName(), iface.getType(), file.getFilePath());
+            });
+            file.getTypeAliases().forEach((typeAlias) => {
+              this.addSchema(
+                interfaces,
+                typeAlias.getName(),
+                typeAlias.getType(),
+                file.getFilePath()
+              );
             });
           } catch (error) {
-            // Skip unparseable files
+            this.warn(`Could not parse types in ${file.getFilePath()}`, error);
           }
         });
 
@@ -583,36 +627,92 @@ class InterfaceScanner {
     return !builtInPrefixes.some((prefix) => name.startsWith(prefix));
   }
 
-  private parseInterface(interfaceDecl: any): any {
-    const properties: Record<string, any> = {};
+  private addSchema(interfaces: Map<string, any>, name: string, type: any, filePath: string): void {
+    if (!this.isValidInterfaceName(name)) return;
+
+    try {
+      interfaces.set(name, this.parseType(type, new Set([name])));
+
+      if (this.options.debugMode) {
+        console.log(`  Interface: ${name}`);
+      }
+    } catch (error) {
+      this.warn(`Could not parse type ${name} in ${filePath}`, error);
+    }
+  }
+
+  private parseType(type: any, seen: Set<string>): any {
+    if (type.isString()) return { type: 'string' };
+    if (type.isNumber()) return { type: 'number' };
+    if (type.isBoolean()) return { type: 'boolean' };
+    if (type.isNull() || type.isUndefined()) return {};
+    if (type.isStringLiteral()) return { type: 'string', enum: [type.getLiteralValue()] };
+    if (type.isNumberLiteral()) return { type: 'number', enum: [type.getLiteralValue()] };
+
+    if (type.isArray()) {
+      return {
+        type: 'array',
+        items: this.parseType(type.getArrayElementType(), seen),
+      };
+    }
+
+    if (type.isUnion()) {
+      const unionTypes = type.getUnionTypes();
+      const hasNull = unionTypes.some((member: any) => member.isNull());
+      const nonNullableTypes = unionTypes.filter(
+        (member: any) => !member.isNull() && !member.isUndefined()
+      );
+      const schemas = nonNullableTypes.map((member: any) => this.parseType(member, seen));
+      const schema = schemas.length === 1 ? schemas[0] : { oneOf: schemas };
+      if (hasNull) {
+        return { ...schema, nullable: true };
+      }
+      return schema;
+    }
+
+    if (type.isIntersection()) {
+      return {
+        allOf: type.getIntersectionTypes().map((member: any) => this.parseType(member, seen)),
+      };
+    }
+
+    if (type.getText() === 'Date') {
+      return { type: 'string', format: 'date-time' };
+    }
+
+    const symbolName = type.getSymbol()?.getName();
+    if (
+      symbolName &&
+      !symbolName.startsWith('__') &&
+      !seen.has(symbolName) &&
+      this.isValidInterfaceName(symbolName)
+    ) {
+      return { $ref: `#/components/schemas/${symbolName}` };
+    }
+
+    const properties = type.getProperties?.() || [];
+    if (properties.length > 0) {
+      return this.parseProperties(properties, seen);
+    }
+
+    return { type: 'object' };
+  }
+
+  private parseProperties(propertySymbols: any[], seen: Set<string>): any {
+    const schemaProperties: Record<string, any> = {};
     const required: string[] = [];
 
-    interfaceDecl.getProperties().forEach((prop: any) => {
+    propertySymbols.forEach((prop: any) => {
       const propName = prop.getName();
-      const propType = prop.getType().getText();
-      const isOptional = prop.hasQuestionToken();
+      const declaration = prop.getDeclarations?.()[0];
+      const propType = prop.getType
+        ? prop.getType()
+        : declaration
+          ? prop.getTypeAtLocation(declaration)
+          : undefined;
+      schemaProperties[propName] = propType ? this.parseType(propType, seen) : { type: 'object' };
 
-      let schema: any = { type: 'string' };
-
-      if (propType.includes('number') || propType.includes('Number')) {
-        schema = { type: 'number' };
-      } else if (propType.includes('boolean') || propType.includes('Boolean')) {
-        schema = { type: 'boolean' };
-      } else if (propType.includes('[]')) {
-        const itemType = propType.replace('[]', '').trim();
-        schema = {
-          type: 'array',
-          items: itemType.includes('number')
-            ? { type: 'number' }
-            : itemType.includes('boolean')
-              ? { type: 'boolean' }
-              : { type: 'string' },
-        };
-      } else if (propType.includes('Date')) {
-        schema = { type: 'string', format: 'date-time' };
-      }
-
-      properties[propName] = schema;
+      const isOptional = prop.hasQuestionToken?.() || prop.isOptional?.() || false;
       if (!isOptional) {
         required.push(propName);
       }
@@ -620,9 +720,14 @@ class InterfaceScanner {
 
     return {
       type: 'object',
-      properties,
+      properties: schemaProperties,
       ...(required.length > 0 && { required }),
     };
+  }
+
+  private warn(message: string, error?: unknown): void {
+    console.warn(`[AutoSwagger Warning] ${message}`);
+    if (error && this.options.debugMode) console.warn(error);
   }
 }
 
@@ -772,33 +877,48 @@ class SpecBuilder {
   }
 
   private getInterfaceNames(method: string, routeName: string): [string, string] {
-    const capitalized = routeName.charAt(0).toUpperCase() + routeName.slice(1);
+    const routeNames = [routeName];
+    if (routeName.endsWith('ies')) {
+      routeNames.push(`${routeName.slice(0, -3)}y`);
+    } else if (routeName.endsWith('s')) {
+      routeNames.push(routeName.slice(0, -1));
+    }
 
     let reqName = '';
     let resName = '';
 
     switch (method) {
       case 'POST':
-        reqName = `Create${capitalized}Request`;
-        resName = `Create${capitalized}Response`;
+        reqName = this.findInterfaceName(routeNames, 'Create', 'Request');
+        resName = this.findInterfaceName(routeNames, 'Create', 'Response');
         break;
       case 'PUT':
-        reqName = `Update${capitalized}Request`;
-        resName = `Update${capitalized}Response`;
+        reqName = this.findInterfaceName(routeNames, 'Update', 'Request');
+        resName = this.findInterfaceName(routeNames, 'Update', 'Response');
         break;
       case 'PATCH':
-        reqName = `Patch${capitalized}Request`;
-        resName = `Patch${capitalized}Response`;
+        reqName = this.findInterfaceName(routeNames, 'Patch', 'Request');
+        resName = this.findInterfaceName(routeNames, 'Patch', 'Response');
         break;
       case 'GET':
-        resName = `Get${capitalized}Response`;
+        resName = this.findInterfaceName(routeNames, 'Get', 'Response');
         break;
       case 'DELETE':
-        resName = `Delete${capitalized}Response`;
+        resName = this.findInterfaceName(routeNames, 'Delete', 'Response');
         break;
     }
 
     return [reqName, resName];
+  }
+
+  private findInterfaceName(routeNames: string[], prefix: string, suffix: string): string {
+    for (const routeName of routeNames) {
+      const capitalized = routeName.charAt(0).toUpperCase() + routeName.slice(1);
+      const name = `${prefix}${capitalized}${suffix}`;
+      if (this.interfaces.has(name)) return name;
+    }
+
+    return '';
   }
 }
 
