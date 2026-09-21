@@ -47,5 +47,7 @@ describe('AutoSwagger Performance', () => {
     expect(updatedCache).toBeDefined();
     expect(initialCache).toBeDefined();
     expect(JSON.stringify(updatedCache) === JSON.stringify(initialCache)).toBe(true);
+
+    swagger.close();
   });
 });

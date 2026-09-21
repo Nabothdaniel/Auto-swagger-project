@@ -1,8 +1,6 @@
 import { describe, expect, it, beforeEach } from '@jest/globals';
-import { AutoSwagger } from '../src';
-import { AutoSwaggerError } from '../src/errors';
+import { AutoSwagger, AutoSwaggerError } from '../src';
 import express from 'express';
-import { Logger } from '../src/logger';
 
 // Mock Logger to avoid console output during tests
 jest.mock('../src/logger');
@@ -31,6 +29,19 @@ describe('AutoSwagger Error Handling', () => {
         docsRoute: '',
       });
     }).toThrow(AutoSwaggerError);
+  });
+
+  it('should reject a configured routesDir that does not exist', async () => {
+    const swagger = new AutoSwagger(app, { routesDir: './missing-routes-dir' });
+    swagger.on('error', () => undefined);
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(swagger.initialize()).rejects.toMatchObject({
+      code: AutoSwaggerError.CODES.ROUTE_SCAN_ERROR,
+    });
+    expect(swagger.getSpec()).toBeNull();
+
+    consoleError.mockRestore();
   });
 
   it('should validate API version configuration', () => {

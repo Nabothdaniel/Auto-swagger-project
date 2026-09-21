@@ -1,116 +1,235 @@
 # Express Auto Swagger
 
-Automatically generate OpenAPI/Swagger documentation from your Express routes with TypeScript support. This library analyzes your Express routes and TypeScript types to create comprehensive, up-to-date API documentation.
+Express Auto Swagger generates an OpenAPI 3 document from an Express and TypeScript codebase. It scans route files, resolves TypeScript interfaces and type aliases, builds request and response schemas, and serves Swagger UI from your application.
 
-## Features
+The goal is to keep API documentation close to the code that defines the API. You write ordinary Express routes and TypeScript types. The package turns them into a usable specification without requiring a second set of hand-written annotations.
 
-- 🚀 **Automatic Route Detection**: Automatically detects and documents Express routes
-- 📝 **TypeScript Support**: Leverages TypeScript types for accurate schema generation
-- 🔄 **Live Updates**: Watch mode for automatic documentation updates
-- 🔢 **API Versioning**: Support for multiple API versions
-- 🎯 **Path Filtering**: Include or exclude specific paths
-- 🎨 **Custom Schemas**: Add custom schema definitions
-- 🔐 **Security Schemes**: Configure API security requirements
-- 📚 **Swagger UI Integration**: Built-in Swagger UI for testing and documentation
+## What it provides
+
+- Route discovery for TypeScript and JavaScript files in common route folders.
+- Schema generation from interfaces and type aliases, including arrays, unions, intersections, nested types, literal values, nullable fields, and common utility types such as `Partial`.
+- Request and response references based on conventional names such as `CreateUserRequest` and `GetUserResponse`.
+- Include and exclude filters for generated paths.
+- Multiple server definitions, API version metadata, custom schemas, and security schemes.
+- Swagger UI mounted inside the Express application.
+- Optional file watching for local development.
+
+## Requirements
+
+- Node.js 18 or newer. Node.js 22 or 24 is recommended for development.
+- Express 4.17 or newer. Express 5 is supported and recommended for new applications.
+- TypeScript 5 or newer in the application being scanned.
 
 ## Installation
 
 ```bash
 npm install express-auto-swagger
-# or
-yarn add express-auto-swagger
 ```
 
-## Quick Start
+Express is a peer dependency and should already be installed in your project.
+
+## Quick start
+
+Mount your routes before initializing the documentation generator. The scanner reads the source files on disk, so `routesDir` should point to the directory containing those files.
 
 ```typescript
 import express from 'express';
 import { AutoSwagger } from 'express-auto-swagger';
 
-const app = express();
+interface CreateUserRequest {
+  name: string;
+  age: number;
+}
 
-// Initialize Auto Swagger
+interface CreateUserResponse {
+  id: string;
+  name: string;
+  age: number;
+}
+
+const app = express();
+app.use(express.json());
+
+app.post(
+  '/users',
+  (req: express.Request<{}, {}, CreateUserRequest>, res: express.Response<CreateUserResponse>) => {
+    res.status(201).json({
+      id: 'user-123',
+      name: req.body.name,
+      age: req.body.age,
+    });
+  }
+);
+
 const swagger = new AutoSwagger(app, {
-  title: 'My API',
+  title: 'Users API',
   version: '1.0.0',
-  description: 'My API Description',
+  description: 'Example user service',
+  routesDir: './routes',
   docsRoute: '/api-docs',
 });
-```
 
-## Configuration Options
+await swagger.initialize();
 
-The `AutoSwaggerOptions` interface supports the following options:
-
-| Option            | Type                | Description                           |
-| ----------------- | ------------------- | ------------------------------------- |
-| `title`           | string              | API title displayed in Swagger UI     |
-| `version`         | string              | API version                           |
-| `description`     | string              | API description                       |
-| `docsRoute`       | string              | Route where Swagger UI will be served |
-| `debugMode`       | boolean             | Enable debug logging                  |
-| `routesDir`       | string              | Directory containing route files      |
-| `watchForChanges` | boolean             | Auto-refresh docs on file changes     |
-| `apiVersions`     | ApiVersion[]        | Configure multiple API versions       |
-| `excludePaths`    | string[]            | Paths to exclude from documentation   |
-| `includeOnly`     | string[]            | Only include specified paths          |
-| `customSchemas`   | Record<string, any> | Custom schema definitions             |
-| `securitySchemes` | Record<string, any> | Security scheme configurations        |
-
-## API Versioning
-
-Support multiple API versions with different base paths:
-
-```typescript
-const swagger = new AutoSwagger(app, {
-  apiVersions: [
-    { version: '1', basePath: '/api/v1' },
-    { version: '2', basePath: '/api/v2', description: 'Latest version' },
-  ],
+app.listen(3000, () => {
+  console.log('API running at http://localhost:3000');
+  console.log('Documentation available at http://localhost:3000/api-docs');
 });
 ```
 
-## Custom Schemas
+Open `http://localhost:3000/api-docs` to view the generated documentation.
 
-Add custom schema definitions:
+## How type inference works
+
+The scanner uses ts-morph to resolve types instead of looking for words in a type's printed text. This means the following declarations produce meaningful OpenAPI schemas:
+
+```typescript
+type UserRole = 'admin' | 'member';
+
+interface Profile {
+  role: UserRole;
+  tags: string[];
+  preferences: {
+    newsletter: boolean;
+  };
+  note?: string | null;
+}
+
+type EditableProfile = Partial<Profile>;
+```
+
+The generated document represents literal unions with `oneOf`, arrays with `items`, nested named types with component references, and explicit `null` members with `nullable: true`. An optional property is not automatically nullable; those are different concepts in OpenAPI.
+
+## Configuration
+
+`AutoSwaggerOptions` supports these fields:
+
+| Option            | Type                  | Description                                                                                   |
+| ----------------- | --------------------- | --------------------------------------------------------------------------------------------- |
+| `title`           | `string`              | Title displayed in the specification and Swagger UI.                                          |
+| `version`         | `string`              | API version placed in the OpenAPI `info` object.                                              |
+| `description`     | `string`              | API description.                                                                              |
+| `docsRoute`       | `string`              | Express path where Swagger UI is mounted. Defaults to `/docs`.                                |
+| `debugMode`       | `boolean`             | Enables diagnostic logging during scanning and refreshes.                                     |
+| `routesDir`       | `string`              | Directory to scan. Defaults to common `routes`, `src/routes`, `src/api`, and `api` locations. |
+| `servers`         | `ServerConfig[]`      | Server URLs included in the generated document.                                               |
+| `watchForChanges` | `boolean`             | Rescans source files after changes during development.                                        |
+| `apiVersions`     | `ApiVersion[]`        | Version metadata with a version and base path.                                                |
+| `excludePaths`    | `string[]`            | Excludes generated paths containing any listed value.                                         |
+| `includeOnly`     | `string[]`            | Includes only generated paths containing any listed value.                                    |
+| `customSchemas`   | `Record<string, any>` | Adds schemas directly to `components.schemas`.                                                |
+| `securitySchemes` | `Record<string, any>` | Adds entries to `components.securitySchemes`.                                                 |
+
+Example configuration:
 
 ```typescript
 const swagger = new AutoSwagger(app, {
-  customSchemas: {
-    Error: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        code: { type: 'number' },
-      },
+  title: 'Orders API',
+  version: '2.0.0',
+  docsRoute: '/api-docs',
+  routesDir: './src/routes',
+  servers: [
+    { url: 'http://localhost:3000', description: 'Local development' },
+    { url: 'https://api.example.com', description: 'Production' },
+  ],
+  securitySchemes: {
+    bearerAuth: {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
     },
   },
 });
 ```
 
+## Refreshing and shutting down
+
+Initialization is asynchronous:
+
+```typescript
+await swagger.initialize();
+```
+
+You can rescan the source files after a change:
+
+```typescript
+await swagger.refresh();
+```
+
+When watch mode is enabled, close the watcher during application shutdown:
+
+```typescript
+process.on('SIGTERM', () => {
+  swagger.close();
+});
+```
+
+The same instance keeps the Swagger UI route registered and updates the served specification after a refresh.
+
+## Error handling
+
+Configuration and scanning failures throw `AutoSwaggerError`, which carries a `code` property. If `routesDir` is set to a directory that does not exist, `initialize()` rejects with the `ROUTE_SCAN_ERROR` code instead of serving an empty document.
+
+```typescript
+import { AutoSwagger, AutoSwaggerError } from 'express-auto-swagger';
+
+try {
+  await swagger.initialize();
+} catch (error) {
+  if (error instanceof AutoSwaggerError) {
+    console.error(error.code, error.message);
+  }
+}
+```
+
+The option and document types (`AutoSwaggerOptions`, `ServerConfig`, `ApiVersion`, `RouteInfo`, `SwaggerSpec`) are exported from the package entry point.
+
+## Why not swagger-jsdoc or swagger-autogen?
+
+Those tools are useful when documentation is driven by comments or explicit annotations. Express Auto Swagger is intended for teams that want TypeScript types to be the primary source of request and response schemas.
+
+| Tool                 | Primary input                                | Typical workflow                                     |
+| -------------------- | -------------------------------------------- | ---------------------------------------------------- |
+| Express Auto Swagger | Express routes and TypeScript types          | Define routes and types; generate the document.      |
+| swagger-jsdoc        | JSDoc annotations plus an OpenAPI definition | Maintain documentation comments beside handlers.     |
+| swagger-autogen      | Route source and optional annotations        | Infer route structure, then refine generated output. |
+| NestJS Swagger       | Nest decorators and metadata                 | Add decorators to controllers and DTOs.              |
+
+For example, a manually documented approach may require an annotation block:
+
+```typescript
+/**
+ * @swagger
+ * /users:
+ *   post:
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateUserRequest'
+ */
+```
+
+With Express Auto Swagger, the route and TypeScript request type remain the source of truth. The tradeoff is that the package follows naming conventions and currently focuses on Express rather than supporting every framework.
+
 ## Development
 
 ```bash
-# Run development server
+npm install
+npm test -- --runInBand
+npm run lint
+npm run build
 npm run dev
 ```
 
-## Requirements
+The sample application serves its UI at `/api-docs`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review and contribution process.
 
-- Node.js >= 14
-- Express >= 5.1.0
-- TypeScript >= 5.0
+## Reporting issues
 
-## Dependencies
+For a bug, include a minimal route, the relevant TypeScript type, generated OpenAPI output, Node.js version, and package version. Security issues should be reported privately according to [SECURITY.md](SECURITY.md).
 
-- express: ^5.1.0
-- swagger-ui-express: ^5.0.1
-- ts-morph: ^27.0.2
+Release history is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+[MIT](LICENSE)
