@@ -79,6 +79,23 @@ app.listen(3000, () => {
 
 Open `http://localhost:3000/api-docs` to view the generated documentation.
 
+## Mounted routers
+
+Routes are documented with the full path they are served from. Prefixes passed to `app.use()` and nested `router.use()` calls are combined with the route path:
+
+```typescript
+// src/routes/productRoutes.ts
+router.get('/:id', getProduct);
+
+// src/routes/index.ts
+router.use('/products', productRoutes);
+
+// src/app.ts
+app.use('/api', routes);
+```
+
+This produces `/api/products/{id}`, tagged `products`. The scanner reads the route files plus the files directly inside each directory between `routesDir` and the working directory, which is where `app.ts`, `server.ts`, or `index.ts` normally live. An entry point kept elsewhere, a prefix built from a variable, and routers created by a factory function are not resolved; those routes keep the path declared in the route file.
+
 ## How type inference works
 
 The scanner uses ts-morph to resolve types instead of looking for words in a type's printed text. This means the following declarations produce meaningful OpenAPI schemas:

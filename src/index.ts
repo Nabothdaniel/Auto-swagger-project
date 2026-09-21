@@ -41,6 +41,7 @@ import { EventEmitter } from 'events';
 import { Logger } from './logger';
 import { AutoSwaggerError } from './errors';
 import { CacheManager } from './cache';
+import { MountTable, joinRoutePath, resolveMounts } from './mounts';
 import type { AutoSwaggerOptions, RouteInfo, SwaggerSpec } from './types';
 
 export { AutoSwaggerError } from './errors';
@@ -394,13 +395,26 @@ class RouteScanner {
       console.log(`\nFound ${routeFiles.length} file(s) in ${foundDir}\n`);
     }
 
+    const mounts = this.resolveMountTable(routeFiles, foundDir);
+
     const allRoutes: RouteInfo[] = [];
     for (const file of routeFiles) {
-      const routes = this.extractRoutesFromFile(file);
+      const routes = this.extractRoutesFromFile(file, mounts);
       allRoutes.push(...routes);
     }
 
     return this.filterRoutes(allRoutes);
+  }
+
+  private resolveMountTable(routeFiles: string[], routesRoot: string): MountTable {
+    try {
+      return resolveMounts(routeFiles, routesRoot, process.cwd());
+    } catch (error) {
+      if (this.options.debugMode) {
+        console.log('  Could not resolve router mount prefixes');
+      }
+      return new MountTable();
+    }
   }
 
   private getSearchDirectories(): string[] {
@@ -462,7 +476,7 @@ class RouteScanner {
     return files;
   }
 
-  private extractRoutesFromFile(filePath: string): RouteInfo[] {
+  private extractRoutesFromFile(filePath: string, mounts: MountTable): RouteInfo[] {
     const routes: RouteInfo[] = [];
 
     try {
@@ -470,27 +484,33 @@ class RouteScanner {
 
       // Match router.get, router.post, app.get, app.post, etc.
       const routeRegex =
-        /(?:router|app)\.(get|post|put|patch|delete|options|head)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
+        /([\w$]*(?:router|app))\.(get|post|put|patch|delete|options|head)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
 
       let match;
       while ((match = routeRegex.exec(content)) !== null) {
-        const method = match[1].toLowerCase();
-        const routePath = match[2];
+        const receiver = match[1];
+        const method = match[2].toLowerCase();
+        const declaredPath = match[3];
 
-        // Detect version from path
-        const versionMatch = routePath.match(/^\/(v\d+)\//);
-        const version = versionMatch ? versionMatch[1] : undefined;
+        // A router mounted more than once is reachable under every prefix
+        mounts.prefixesFor(path.normalize(filePath), receiver).forEach((prefix) => {
+          const routePath = joinRoutePath(prefix, declaredPath);
 
-        routes.push({
-          method,
-          path: routePath.replace(/:([^/]+)/g, '{$1}'),
-          file: path.basename(filePath),
-          version,
+          // Detect version from path
+          const versionMatch = routePath.match(/^\/(v\d+)\//);
+          const version = versionMatch ? versionMatch[1] : undefined;
+
+          routes.push({
+            method,
+            path: routePath.replace(/:([^/]+)/g, '{$1}'),
+            file: path.basename(filePath),
+            version,
+          });
+
+          if (this.options.debugMode) {
+            console.log(`  Found: ${method.toUpperCase()} ${routePath}`);
+          }
         });
-
-        if (this.options.debugMode) {
-          console.log(`  Found: ${method.toUpperCase()} ${routePath}`);
-        }
       }
     } catch (error) {
       if (this.options.debugMode) {
@@ -781,7 +801,7 @@ class SpecBuilder {
 
     const operation: any = {
       summary: `${method} ${route.path}`,
-      tags: [route.path.split('/')[1] || 'default'],
+      tags: [this.getTag(route.path)],
     };
 
     // Path parameters
@@ -822,6 +842,18 @@ class SpecBuilder {
     return operation;
   }
 
+  /**
+   * The first path segment that names a resource, skipping mount prefixes such
+   * as `api` and `v1` and path parameters.
+   */
+  private getTag(routePath: string): string {
+    const segments = routePath.split('/').filter(Boolean);
+    const resource = segments.find(
+      (segment) => segment !== 'api' && !/^v\d+$/.test(segment) && !segment.startsWith('{')
+    );
+    return resource || segments[0] || 'default';
+  }
+
   private buildComponents(): any {
     const schemas: Record<string, any> = {};
 
@@ -847,9 +879,10 @@ class SpecBuilder {
     Object.keys(paths).forEach((route) => {
       Object.keys(paths[route]).forEach((method) => {
         const methodUpper = method.toUpperCase();
-        const routeName = this.normalizeRouteName(route);
-
-        const [reqName, resName] = this.getInterfaceNames(methodUpper, routeName);
+        const [reqName, resName] = this.getInterfaceNames(
+          methodUpper,
+          this.getRouteNameCandidates(route)
+        );
 
         // Map request
         if (reqName && this.interfaces.has(reqName) && paths[route][method].requestBody) {
@@ -876,13 +909,33 @@ class SpecBuilder {
       .replace(/[^a-zA-Z0-9]/g, '');
   }
 
-  private getInterfaceNames(method: string, routeName: string): [string, string] {
-    const routeNames = [routeName];
-    if (routeName.endsWith('ies')) {
-      routeNames.push(`${routeName.slice(0, -3)}y`);
-    } else if (routeName.endsWith('s')) {
-      routeNames.push(routeName.slice(0, -1));
+  /**
+   * Names to try when matching interfaces by convention: the whole path first,
+   * then the last resource segment so `/api/products/{id}` matches `Product`.
+   */
+  private getRouteNameCandidates(route: string): string[] {
+    const candidates = [this.normalizeRouteName(route)];
+    const resource = route
+      .split('/')
+      .filter((segment) => segment && !segment.startsWith('{'))
+      .pop();
+    if (resource) {
+      const normalized = this.normalizeRouteName(resource);
+      if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
     }
+    return candidates;
+  }
+
+  private getInterfaceNames(method: string, names: string[]): [string, string] {
+    const routeNames: string[] = [];
+    names.forEach((routeName) => {
+      routeNames.push(routeName);
+      if (routeName.endsWith('ies')) {
+        routeNames.push(`${routeName.slice(0, -3)}y`);
+      } else if (routeName.endsWith('s')) {
+        routeNames.push(routeName.slice(0, -1));
+      }
+    });
 
     let reqName = '';
     let resName = '';
