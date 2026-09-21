@@ -1,0 +1,19 @@
+{
+  "name": "express-auto-doc-ts-basic-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal Express and TypeScript API documented by @nabothdaniel/express-auto-doc-ts",
+  "scripts": {
+    "start": "ts-node src/app.ts"
+  },
+  "dependencies": {
+    "@nabothdaniel/express-auto-doc-ts": "^1.1.1",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
