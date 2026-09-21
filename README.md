@@ -23,7 +23,7 @@ The goal is to keep API documentation close to the code that defines the API. Yo
 ## Installation
 
 ```bash
-npm install express-auto-swagger
+npm install @nabothdaniel/express-auto-doc-ts
 ```
 
 Express is a peer dependency and should already be installed in your project.
@@ -34,7 +34,7 @@ Mount your routes before initializing the documentation generator. The scanner r
 
 ```typescript
 import express from 'express';
-import { AutoSwagger } from 'express-auto-swagger';
+import { AutoSwagger } from '@nabothdaniel/express-auto-doc-ts';
 
 interface CreateUserRequest {
   name: string;
@@ -171,7 +171,7 @@ The same instance keeps the Swagger UI route registered and updates the served s
 Configuration and scanning failures throw `AutoSwaggerError`, which carries a `code` property. If `routesDir` is set to a directory that does not exist, `initialize()` rejects with the `ROUTE_SCAN_ERROR` code instead of serving an empty document.
 
 ```typescript
-import { AutoSwagger, AutoSwaggerError } from 'express-auto-swagger';
+import { AutoSwagger, AutoSwaggerError } from '@nabothdaniel/express-auto-doc-ts';
 
 try {
   await swagger.initialize();

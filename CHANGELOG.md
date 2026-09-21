@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add a `close()` method for explicit watcher cleanup.
 - Export `AutoSwaggerError` and the public option and document types from the package entry point.
-- Add an `exports` map to `package.json`. Deep imports such as `express-auto-swagger/dist/errors` are no longer supported; import from the package root.
+- Add an `exports` map to `package.json`. Deep imports such as `@nabothdaniel/express-auto-doc-ts/dist/errors` are no longer supported; import from the package root.
 - Include a `LICENSE` file in the published package.
 
 ### Changed
@@ -23,12 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Point the `types` entry at `dist/index.d.ts`. Versions 1.0.0 and 1.0.1 referenced a declaration file that was not published, so strict TypeScript projects failed with TS7016.
+- Reference request and response interfaces from operations instead of emitting a bare `object` schema.
 - Resolve request and response interfaces for singular and plural route names.
 - Prevent watch mode from retaining untracked file watchers and refresh timers.
 - Keep one Swagger UI middleware registration and serve the latest spec after a refresh.
 - Resolve interfaces and type aliases structurally with ts-morph instead of string matching.
 - Preserve literal unions, nested types, arrays, intersections, nullable fields, and `Partial` properties.
-- Configure Jest and ESLint so the repository test and lint scripts run locally.
+- Configure Jest and ESLint so the repository test and lint scripts run locally, and track `jest.config.js` so they also run in CI.
 - Align the supported Node.js minimum with ts-morph and test current LTS lines in CI.
 
 ### Tests
