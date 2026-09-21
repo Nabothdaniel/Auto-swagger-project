@@ -4,7 +4,7 @@
  *
  * @class AutoSwagger
  * @extends {EventEmitter}
- * @version 1.1.0
+ * @version 1.1.1
  *
  * @example
  * ```typescript

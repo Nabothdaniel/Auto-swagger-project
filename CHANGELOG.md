@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-21
+
 ### Fixed
 
 - Report routes with the prefix of the router they are mounted on. `app.use('/api', router)` and nested `router.use()` calls are resolved through default, named, and `require` imports, and a router mounted more than once is documented under each prefix.
