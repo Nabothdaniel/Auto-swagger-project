@@ -1,5 +1,10 @@
 # Express Auto Swagger
 
+[![npm version](https://img.shields.io/npm/v/@nabothdaniel/express-auto-doc-ts.svg)](https://www.npmjs.com/package/@nabothdaniel/express-auto-doc-ts)
+[![npm downloads](https://img.shields.io/npm/dm/@nabothdaniel/express-auto-doc-ts.svg)](https://www.npmjs.com/package/@nabothdaniel/express-auto-doc-ts)
+[![CI](https://github.com/Nabothdaniel/Auto-swagger-project/actions/workflows/ci.yml/badge.svg)](https://github.com/Nabothdaniel/Auto-swagger-project/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Express Auto Swagger generates an OpenAPI 3 document from an Express and TypeScript codebase. It scans route files, resolves TypeScript interfaces and type aliases, builds request and response schemas, and serves Swagger UI from your application.
 
 The goal is to keep API documentation close to the code that defines the API. You write ordinary Express routes and TypeScript types. The package turns them into a usable specification without requiring a second set of hand-written annotations.
@@ -78,6 +83,8 @@ app.listen(3000, () => {
 ```
 
 Open `http://localhost:3000/api-docs` to view the generated documentation.
+
+A complete runnable project is in [examples/basic](examples/basic). It installs the published package, mounts nested routers under `/api`, and needs only `npm install` and `npm start`.
 
 ## Mounted routers
 

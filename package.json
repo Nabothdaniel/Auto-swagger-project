@@ -35,11 +35,19 @@
   },
   "keywords": [
     "express",
+    "expressjs",
     "swagger",
+    "swagger-ui",
     "openapi",
-    "documentation",
+    "openapi3",
+    "api-documentation",
+    "api-docs",
+    "rest-api",
     "typescript",
-    "auto-generate"
+    "ts-morph",
+    "documentation",
+    "auto-generate",
+    "zero-config"
   ],
   "author": "Daniel Naboth Agriga",
   "license": "MIT",
