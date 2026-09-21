@@ -9,7 +9,7 @@
  * @example
  * ```typescript
  * import express from 'express';
- * import { AutoSwagger } from 'express-auto-swagger';
+ * import { AutoSwagger } from '@nabothdaniel/express-auto-doc-ts';
  *
  * const app = express();
  *
