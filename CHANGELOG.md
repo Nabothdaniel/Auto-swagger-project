@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Report routes with the prefix of the router they are mounted on. `app.use('/api', router)` and nested `router.use()` calls are resolved through default, named, and `require` imports, and a router mounted more than once is documented under each prefix.
+- Match request and response interfaces for prefixed routes by their resource segment, so `/api/products/{id}` still links `GetProductResponse`.
+
+### Changed
+
+- Tag operations by the first resource segment, skipping `api`, version segments such as `v1`, and path parameters. Routes declared as `/api/users` were tagged `api` and are now tagged `users`.
+
 ## [1.1.0] - 2026-09-21
 
 ### Added
