@@ -129,6 +129,18 @@ When a handler has no body types, the scanner falls back to naming conventions: 
 
 Resolving handler types loads the Express type definitions, which adds roughly two to three seconds to each scan. Set `inferHandlerTypes: false` to skip it and rely on naming conventions only.
 
+## Response status codes
+
+Each operation lists the status codes its handler sends. These calls are read from the handler body:
+
+- `res.status(201).json(...)` documents `201 Created`.
+- `res.sendStatus(204)` and `res.status(204).end()` document `204 No Content`, without a `content` entry.
+- A bare `res.json()` or `res.send()` documents `200`.
+
+A handler with several calls, such as `404` for a missing record and `200` for the record, gets one response per code. Only numeric literals are read. A computed status such as `res.status(code)` is ignored, and a handler with no readable status keeps a single `200` response.
+
+Inline handlers are always read. Controllers imported from other files, and helpers such as `asyncHandler(fn)`, are followed when `inferHandlerTypes` is enabled, because that is when the TypeScript checker runs.
+
 ## How type inference works
 
 The scanner uses ts-morph to resolve types instead of looking for words in a type's printed text. This means the following declarations produce meaningful OpenAPI schemas:

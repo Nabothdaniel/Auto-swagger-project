@@ -33,6 +33,7 @@
  */
 
 import { Express } from 'express';
+import { STATUS_CODES } from 'http';
 import swaggerUi from 'swagger-ui-express';
 import { Project, Type } from 'ts-morph';
 import path from 'path';
@@ -372,6 +373,9 @@ export class AutoSwagger extends EventEmitter {
 // Route Scanner Module
 // ============================================================================
 
+// Success statuses that never carry a body
+const BODYLESS_STATUS_CODES = [204, 205];
+
 class RouteScanner {
   /** Named schemas found while resolving handler types. */
   readonly discoveredSchemas = new Map<string, any>();
@@ -517,8 +521,11 @@ class RouteScanner {
     try {
       const sourceFile = project.addSourceFileAtPath(filePath);
 
-      findRouteCalls(sourceFile).forEach(({ receiver, method, path: declaredPath }) => {
+      findRouteCalls(sourceFile).forEach((route) => {
+        const { receiver, method, path: declaredPath } = route;
         const handler = handlerTypes.get(filePath, receiver, method, declaredPath);
+        // The checker-backed table also follows imported controllers
+        const statusCodes = handler?.statusCodes ?? route.statusCodes;
 
         // A router mounted more than once is reachable under every prefix
         mounts.prefixesFor(path.normalize(filePath), receiver).forEach((prefix) => {
@@ -535,6 +542,7 @@ class RouteScanner {
             version,
             ...(handler?.request && { requestSchema: handler.request }),
             ...(handler?.response && { responseSchema: handler.response }),
+            ...(statusCodes && { statusCodes }),
           });
 
           if (this.options.debugMode) {
@@ -777,18 +785,33 @@ class SpecBuilder {
     }
 
     // Responses
-    operation.responses = {
-      200: {
-        description: 'Success',
-        content: {
-          'application/json': {
-            schema: route.responseSchema ?? { type: 'object' },
-          },
-        },
-      },
-    };
+    operation.responses = this.buildResponses(route);
 
     return operation;
+  }
+
+  /**
+   * One response per detected status code, or a single 200 when none was found.
+   * Only successful codes that carry a body get JSON content.
+   */
+  private buildResponses(route: RouteInfo): Record<string, any> {
+    const responses: Record<string, any> = {};
+
+    (route.statusCodes?.length ? route.statusCodes : [200]).forEach((code) => {
+      const description = code === 200 ? 'Success' : (STATUS_CODES[code] ?? 'Response');
+      const hasBody = code >= 200 && code < 300 && !BODYLESS_STATUS_CODES.includes(code);
+
+      responses[code] = hasBody
+        ? {
+            description,
+            content: {
+              'application/json': { schema: route.responseSchema ?? { type: 'object' } },
+            },
+          }
+        : { description };
+    });
+
+    return responses;
   }
 
   /**

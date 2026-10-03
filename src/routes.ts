@@ -5,6 +5,7 @@
  */
 
 import { Node, Project, SourceFile, SyntaxKind } from 'ts-morph';
+import { detectStatusCodes } from './responses';
 
 export interface RouteCall {
   /** Name of the router or app the route is registered on. */
@@ -14,6 +15,8 @@ export interface RouteCall {
   path: string;
   /** Handler and middleware arguments, in order. */
   handlers: Node[];
+  /** Status codes the handlers send, when any could be read. */
+  statusCodes?: number[];
 }
 
 export const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'];
@@ -33,8 +36,11 @@ export function createSyntaxProject(): Project {
   });
 }
 
-/** Routes registered in `sourceFile`, in source order. */
-export function findRouteCalls(sourceFile: SourceFile): RouteCall[] {
+/**
+ * Routes registered in `sourceFile`, in source order. `followReferences` lets
+ * status detection resolve controllers by name, which needs the type checker.
+ */
+export function findRouteCalls(sourceFile: SourceFile, followReferences = false): RouteCall[] {
   const routerNames = collectRouterNames(sourceFile);
   const found: { position: number; route: RouteCall }[] = [];
 
@@ -54,9 +60,16 @@ export function findRouteCalls(sourceFile: SourceFile): RouteCall[] {
     const handlers = target.path === undefined ? args.slice(1) : args;
     if (declaredPath === undefined || handlers.length === 0) return;
 
+    const statusCodes = detectStatusCodes(handlers, followReferences);
     found.push({
       position: callee.getNameNode().getStart(),
-      route: { receiver: target.receiver, method, path: declaredPath, handlers },
+      route: {
+        receiver: target.receiver,
+        method,
+        path: declaredPath,
+        handlers,
+        ...(statusCodes && { statusCodes }),
+      },
     });
   });
 
