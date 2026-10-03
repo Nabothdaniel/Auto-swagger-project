@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Detect `router.route('/x').get().post()` chains and routers with any variable name, such as `const api = Router()`. Routes are now found with the TypeScript syntax tree instead of a regular expression, so calls like `map.get('key')`, `axios.get('/url')`, and routes inside comments or strings are no longer reported. A router is recognized by its `express()` or `Router()` initializer, an Express type annotation, or a name ending in `router` or `app`. Routes come out in source order.
 - Register named types that operations and other schemas refer to even when they are declared outside `routesDir`, so generated `$ref` entries resolve.
 - Emit a `$ref` for a type that refers to itself instead of failing to generate its schema.
 
