@@ -13,7 +13,7 @@ The goal is to keep API documentation close to the code that defines the API. Yo
 
 - Route discovery for TypeScript and JavaScript files in common route folders.
 - Schema generation from interfaces and type aliases, including arrays, unions, intersections, nested types, literal values, nullable fields, and common utility types such as `Partial`.
-- Request and response references based on conventional names such as `CreateUserRequest` and `GetUserResponse`.
+- Request and response schemas read from `Request<...>`, `Response<...>`, and `RequestHandler<...>` types on your handlers, with conventional names such as `CreateUserRequest` as a fallback.
 - Include and exclude filters for generated paths.
 - Multiple server definitions, API version metadata, custom schemas, and security schemes.
 - Swagger UI mounted inside the Express application.
@@ -103,6 +103,32 @@ app.use('/api', routes);
 
 This produces `/api/products/{id}`, tagged `products`. The scanner reads the route files plus the files directly inside each directory between `routesDir` and the working directory, which is where `app.ts`, `server.ts`, or `index.ts` normally live. An entry point kept elsewhere, a prefix built from a variable, and routers created by a factory function are not resolved; those routes keep the path declared in the route file.
 
+## How request and response types are found
+
+The types you already wrote on a handler are used first. The TypeScript checker resolves the handler, so all of these forms work, including handlers imported from a controller file and handlers registered after middleware:
+
+```typescript
+// Request<Params, ResBody, ReqBody> and Response<ResBody>
+export const createProduct = (
+  req: Request<{}, Product, ProductInput>,
+  res: Response<Product>
+) => {};
+
+// RequestHandler<Params, ResBody, ReqBody>
+export const patchProduct: RequestHandler<{ id: string }, Product, ProductPatch> = (req, res) => {};
+
+// satisfies
+router.get('/products/:id', ((req, res) => {}) satisfies RequestHandler<{ id: string }, Product>);
+
+router.post('/products', requireAuth, createProduct);
+```
+
+`POST /products` gets a request body of `#/components/schemas/ProductInput` and a response of `#/components/schemas/Product`. A `Response<Product[]>` becomes an array of references. Named types are added to `components.schemas` wherever they are declared, so types kept in `src/types` or `src/models` do not need to live inside `routesDir`.
+
+When a handler has no body types, the scanner falls back to naming conventions: `POST /users` looks for `CreateUserRequest` and `CreateUserResponse`, `PUT` for `UpdateUser...`, `PATCH` for `PatchUser...`, `GET` for `GetUserResponse`, and `DELETE` for `DeleteUserResponse`.
+
+Resolving handler types loads the Express type definitions, which adds roughly two to three seconds to each scan. Set `inferHandlerTypes: false` to skip it and rely on naming conventions only.
+
 ## How type inference works
 
 The scanner uses ts-morph to resolve types instead of looking for words in a type's printed text. This means the following declarations produce meaningful OpenAPI schemas:
@@ -128,21 +154,22 @@ The generated document represents literal unions with `oneOf`, arrays with `item
 
 `AutoSwaggerOptions` supports these fields:
 
-| Option            | Type                  | Description                                                                                   |
-| ----------------- | --------------------- | --------------------------------------------------------------------------------------------- |
-| `title`           | `string`              | Title displayed in the specification and Swagger UI.                                          |
-| `version`         | `string`              | API version placed in the OpenAPI `info` object.                                              |
-| `description`     | `string`              | API description.                                                                              |
-| `docsRoute`       | `string`              | Express path where Swagger UI is mounted. Defaults to `/docs`.                                |
-| `debugMode`       | `boolean`             | Enables diagnostic logging during scanning and refreshes.                                     |
-| `routesDir`       | `string`              | Directory to scan. Defaults to common `routes`, `src/routes`, `src/api`, and `api` locations. |
-| `servers`         | `ServerConfig[]`      | Server URLs included in the generated document.                                               |
-| `watchForChanges` | `boolean`             | Rescans source files after changes during development.                                        |
-| `apiVersions`     | `ApiVersion[]`        | Version metadata with a version and base path.                                                |
-| `excludePaths`    | `string[]`            | Excludes generated paths containing any listed value.                                         |
-| `includeOnly`     | `string[]`            | Includes only generated paths containing any listed value.                                    |
-| `customSchemas`   | `Record<string, any>` | Adds schemas directly to `components.schemas`.                                                |
-| `securitySchemes` | `Record<string, any>` | Adds entries to `components.securitySchemes`.                                                 |
+| Option              | Type                  | Description                                                                                   |
+| ------------------- | --------------------- | --------------------------------------------------------------------------------------------- |
+| `title`             | `string`              | Title displayed in the specification and Swagger UI.                                          |
+| `version`           | `string`              | API version placed in the OpenAPI `info` object.                                              |
+| `description`       | `string`              | API description.                                                                              |
+| `docsRoute`         | `string`              | Express path where Swagger UI is mounted. Defaults to `/docs`.                                |
+| `debugMode`         | `boolean`             | Enables diagnostic logging during scanning and refreshes.                                     |
+| `routesDir`         | `string`              | Directory to scan. Defaults to common `routes`, `src/routes`, `src/api`, and `api` locations. |
+| `servers`           | `ServerConfig[]`      | Server URLs included in the generated document.                                               |
+| `watchForChanges`   | `boolean`             | Rescans source files after changes during development.                                        |
+| `apiVersions`       | `ApiVersion[]`        | Version metadata with a version and base path.                                                |
+| `excludePaths`      | `string[]`            | Excludes generated paths containing any listed value.                                         |
+| `includeOnly`       | `string[]`            | Includes only generated paths containing any listed value.                                    |
+| `customSchemas`     | `Record<string, any>` | Adds schemas directly to `components.schemas`.                                                |
+| `securitySchemes`   | `Record<string, any>` | Adds entries to `components.securitySchemes`.                                                 |
+| `inferHandlerTypes` | `boolean`             | Reads request and response body types from handler signatures. Defaults to `true`.            |
 
 Example configuration:
 

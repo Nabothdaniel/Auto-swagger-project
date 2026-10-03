@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Infer request and response schemas from handler types. `Request<P, ResBody, ReqBody>`, `Response<ResBody>`, `RequestHandler<...>` annotations, and `satisfies RequestHandler<...>` are resolved with the TypeScript checker for inline handlers, imported controllers, and handlers registered after middleware. Naming conventions remain the fallback for untyped handlers.
+- Add the `inferHandlerTypes` option, enabled by default. Set it to `false` to skip handler resolution, which adds roughly two to three seconds to each scan.
+- Add optional `requestSchema` and `responseSchema` fields to `RouteInfo`.
+
+### Fixed
+
+- Register named types that operations and other schemas refer to even when they are declared outside `routesDir`, so generated `$ref` entries resolve.
+- Emit a `$ref` for a type that refers to itself instead of failing to generate its schema.
+
 ## [1.1.1] - 2026-09-21
 
 ### Fixed
