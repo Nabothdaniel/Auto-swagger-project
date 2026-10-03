@@ -43,6 +43,7 @@ import { AutoSwaggerError } from './errors';
 import { CacheManager } from './cache';
 import { MountTable, joinRoutePath, resolveMounts } from './mounts';
 import { HandlerTypeTable, resolveHandlerTypes } from './handlers';
+import { createSyntaxProject, findRouteCalls } from './routes';
 import { SchemaConverter, isValidSchemaName } from './schema';
 import type { AutoSwaggerOptions, RouteInfo, SwaggerSpec } from './types';
 
@@ -412,9 +413,10 @@ class RouteScanner {
     const mounts = this.resolveMountTable(routeFiles, foundDir);
     const handlerTypes = this.resolveHandlerTypeTable(routeFiles);
 
+    const project = createSyntaxProject();
     const allRoutes: RouteInfo[] = [];
     for (const file of routeFiles) {
-      const routes = this.extractRoutesFromFile(file, mounts, handlerTypes);
+      const routes = this.extractRoutesFromFile(file, project, mounts, handlerTypes);
       allRoutes.push(...routes);
     }
 
@@ -506,23 +508,16 @@ class RouteScanner {
 
   private extractRoutesFromFile(
     filePath: string,
+    project: Project,
     mounts: MountTable,
     handlerTypes: HandlerTypeTable
   ): RouteInfo[] {
     const routes: RouteInfo[] = [];
 
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const sourceFile = project.addSourceFileAtPath(filePath);
 
-      // Match router.get, router.post, app.get, app.post, etc.
-      const routeRegex =
-        /([\w$]*(?:router|app))\.(get|post|put|patch|delete|options|head)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
-
-      let match;
-      while ((match = routeRegex.exec(content)) !== null) {
-        const receiver = match[1];
-        const method = match[2].toLowerCase();
-        const declaredPath = match[3];
+      findRouteCalls(sourceFile).forEach(({ receiver, method, path: declaredPath }) => {
         const handler = handlerTypes.get(filePath, receiver, method, declaredPath);
 
         // A router mounted more than once is reachable under every prefix
@@ -546,7 +541,7 @@ class RouteScanner {
             console.log(`  Found: ${method.toUpperCase()} ${routePath}`);
           }
         });
-      }
+      });
     } catch (error) {
       if (this.options.debugMode) {
         console.log(`  Could not read: ${path.basename(filePath)}`);

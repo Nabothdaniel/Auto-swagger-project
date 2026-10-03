@@ -7,16 +7,14 @@
 
 import path from 'path';
 import fs from 'fs';
-import { Node, Project, SourceFile, SyntaxKind, Type, ts } from 'ts-morph';
+import { Node, Project, SourceFile, Type, ts } from 'ts-morph';
+import { findRouteCalls } from './routes';
 import { SchemaConverter } from './schema';
 
 export interface HandlerSchemas {
   request?: any;
   response?: any;
 }
-
-const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'];
-const ROUTER_NAME = /(?:router|app)$/i;
 
 // Positions of the body types in Request<Params, ResBody, ReqBody, Query> and
 // Response<ResBody>.
@@ -118,28 +116,11 @@ function collectHandlerTypes(
 ): void {
   const filePath = sourceFile.getFilePath();
 
-  sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).forEach((call) => {
-    const callee = call.getExpression();
-    if (!Node.isPropertyAccessExpression(callee)) return;
-
-    const method = callee.getName().toLowerCase();
-    const receiver = callee.getExpression();
-    if (!HTTP_METHODS.includes(method) || !Node.isIdentifier(receiver)) return;
-    if (!ROUTER_NAME.test(receiver.getText())) return;
-
-    const args = call.getArguments();
-    const routePath = args[0];
-    if (
-      args.length < 2 ||
-      !(Node.isStringLiteral(routePath) || Node.isNoSubstitutionTemplateLiteral(routePath))
-    ) {
-      return;
-    }
-
+  findRouteCalls(sourceFile).forEach((route) => {
     try {
-      const schemas = readHandlerSchemas(args[args.length - 1], converter);
+      const schemas = readHandlerSchemas(route.handlers[route.handlers.length - 1], converter);
       if (schemas.request || schemas.response) {
-        table.set(filePath, receiver.getText(), method, routePath.getLiteralText(), schemas);
+        table.set(filePath, route.receiver, route.method, route.path, schemas);
       }
     } catch (error) {
       // Leave the route to naming-convention matching
