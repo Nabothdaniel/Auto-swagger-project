@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add the `inferHandlerTypes` option, enabled by default. Set it to `false` to skip handler resolution, which adds roughly two to three seconds to each scan.
 - Add optional `requestSchema` and `responseSchema` fields to `RouteInfo`.
 
+### Changed
+
+- Document the status codes a handler sends instead of a fixed `200` response. `res.status(201).json()` is reported as `201 Created`, `res.sendStatus(204)` and `res.status(204).end()` as `204 No Content` with no `content` entry, and a handler with several status calls gets one response per code. Only numeric literals are read; a computed status, or a handler with no readable status, keeps the single `200` response. This changes the generated OpenAPI shape for routes that send a status other than 200. Imported controllers are followed when `inferHandlerTypes` is enabled.
+- Add an optional `statusCodes` field to `RouteInfo`.
+
 ### Fixed
 
 - Detect `router.route('/x').get().post()` chains and routers with any variable name, such as `const api = Router()`. Routes are now found with the TypeScript syntax tree instead of a regular expression, so calls like `map.get('key')`, `axios.get('/url')`, and routes inside comments or strings are no longer reported. A router is recognized by its `express()` or `Router()` initializer, an Express type annotation, or a name ending in `router` or `app`. Routes come out in source order.

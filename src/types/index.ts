@@ -33,6 +33,8 @@ export interface RouteInfo {
   version?: string;
   requestSchema?: Record<string, any>;
   responseSchema?: Record<string, any>;
+  /** Status codes the handler sends, read from numeric literals. Defaults to 200. */
+  statusCodes?: number[];
 }
 
 export interface SwaggerSpec {
