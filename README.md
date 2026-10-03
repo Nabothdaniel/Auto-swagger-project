@@ -125,6 +125,17 @@ router.post('/products', requireAuth, createProduct);
 
 `POST /products` gets a request body of `#/components/schemas/ProductInput` and a response of `#/components/schemas/Product`. A `Response<Product[]>` becomes an array of references. Named types are added to `components.schemas` wherever they are declared, so types kept in `src/types` or `src/models` do not need to live inside `routesDir`.
 
+The naming-convention fallback, which links `CreateProductRequest` to `POST /products`, only sees the directories that are scanned. When your handlers are untyped or `inferHandlerTypes` is `false`, point `typesDir` at the folders that hold your types:
+
+```typescript
+new AutoSwagger(app, {
+  routesDir: './src/routes',
+  typesDir: ['./src/types', './src/models'],
+});
+```
+
+A `typesDir` that does not exist logs a warning and is skipped. `node_modules`, `dist`, `build`, `coverage`, test files, and `.d.ts` files are never scanned.
+
 When a handler has no body types, the scanner falls back to naming conventions: `POST /users` looks for `CreateUserRequest` and `CreateUserResponse`, `PUT` for `UpdateUser...`, `PATCH` for `PatchUser...`, `GET` for `GetUserResponse`, and `DELETE` for `DeleteUserResponse`.
 
 Resolving handler types loads the Express type definitions, which adds roughly two to three seconds to each scan. Set `inferHandlerTypes: false` to skip it and rely on naming conventions only.
@@ -174,6 +185,7 @@ The generated document represents literal unions with `oneOf`, arrays with `item
 | `docsRoute`         | `string`              | Express path where Swagger UI is mounted. Defaults to `/docs`.                                |
 | `debugMode`         | `boolean`             | Enables diagnostic logging during scanning and refreshes.                                     |
 | `routesDir`         | `string`              | Directory to scan. Defaults to common `routes`, `src/routes`, `src/api`, and `api` locations. |
+| `typesDir`          | `string \| string[]`  | Extra directories to scan for interfaces and type aliases, in addition to `routesDir`.        |
 | `servers`           | `ServerConfig[]`      | Server URLs included in the generated document.                                               |
 | `watchForChanges`   | `boolean`             | Rescans source files after changes during development.                                        |
 | `apiVersions`       | `ApiVersion[]`        | Version metadata with a version and base path.                                                |
