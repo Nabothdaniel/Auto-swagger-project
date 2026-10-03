@@ -34,7 +34,7 @@
 
 import { Express } from 'express';
 import swaggerUi from 'swagger-ui-express';
-import { Project } from 'ts-morph';
+import { Project, Type } from 'ts-morph';
 import path from 'path';
 import fs from 'fs';
 import { EventEmitter } from 'events';
@@ -42,6 +42,8 @@ import { Logger } from './logger';
 import { AutoSwaggerError } from './errors';
 import { CacheManager } from './cache';
 import { MountTable, joinRoutePath, resolveMounts } from './mounts';
+import { HandlerTypeTable, resolveHandlerTypes } from './handlers';
+import { SchemaConverter, isValidSchemaName } from './schema';
 import type { AutoSwaggerOptions, RouteInfo, SwaggerSpec } from './types';
 
 export { AutoSwaggerError } from './errors';
@@ -62,6 +64,7 @@ export class AutoSwagger extends EventEmitter {
   private currentSpec: SwaggerSpec | null = null;
   private logger: Logger;
   private cache: CacheManager;
+  private handlerSchemas = new Map<string, any>();
 
   /**
    * Create a new instance of AutoSwagger
@@ -223,17 +226,25 @@ export class AutoSwagger extends EventEmitter {
       includeOnly: options.includeOnly || [],
       customSchemas: options.customSchemas || {},
       securitySchemes: options.securitySchemes || {},
+      inferHandlerTypes: options.inferHandlerTypes ?? true,
     };
   }
 
   private async scanRoutes(): Promise<RouteInfo[]> {
     const scanner = new RouteScanner(this.options);
-    return scanner.scan();
+    const routes = scanner.scan();
+    this.handlerSchemas = scanner.discoveredSchemas;
+    return routes;
   }
 
   private async scanInterfaces(): Promise<Map<string, any>> {
     const scanner = new InterfaceScanner(this.options);
-    return scanner.scan();
+    const interfaces = scanner.scan();
+
+    // Types reached through handlers are resolved with full import
+    // information, so they take precedence over the directory scan.
+    this.handlerSchemas.forEach((schema, name) => interfaces.set(name, schema));
+    return interfaces;
   }
 
   private buildOpenApiSpec(routes: RouteInfo[], interfaces: Map<string, any>): SwaggerSpec {
@@ -361,6 +372,9 @@ export class AutoSwagger extends EventEmitter {
 // ============================================================================
 
 class RouteScanner {
+  /** Named schemas found while resolving handler types. */
+  readonly discoveredSchemas = new Map<string, any>();
+
   constructor(private options: Required<AutoSwaggerOptions>) {}
 
   scan(): RouteInfo[] {
@@ -396,14 +410,28 @@ class RouteScanner {
     }
 
     const mounts = this.resolveMountTable(routeFiles, foundDir);
+    const handlerTypes = this.resolveHandlerTypeTable(routeFiles);
 
     const allRoutes: RouteInfo[] = [];
     for (const file of routeFiles) {
-      const routes = this.extractRoutesFromFile(file, mounts);
+      const routes = this.extractRoutesFromFile(file, mounts, handlerTypes);
       allRoutes.push(...routes);
     }
 
     return this.filterRoutes(allRoutes);
+  }
+
+  private resolveHandlerTypeTable(routeFiles: string[]): HandlerTypeTable {
+    if (!this.options.inferHandlerTypes) return new HandlerTypeTable();
+
+    try {
+      return resolveHandlerTypes(routeFiles, this.discoveredSchemas, process.cwd());
+    } catch (error) {
+      if (this.options.debugMode) {
+        console.log('  Could not resolve handler types');
+      }
+      return new HandlerTypeTable();
+    }
   }
 
   private resolveMountTable(routeFiles: string[], routesRoot: string): MountTable {
@@ -476,7 +504,11 @@ class RouteScanner {
     return files;
   }
 
-  private extractRoutesFromFile(filePath: string, mounts: MountTable): RouteInfo[] {
+  private extractRoutesFromFile(
+    filePath: string,
+    mounts: MountTable,
+    handlerTypes: HandlerTypeTable
+  ): RouteInfo[] {
     const routes: RouteInfo[] = [];
 
     try {
@@ -491,6 +523,7 @@ class RouteScanner {
         const receiver = match[1];
         const method = match[2].toLowerCase();
         const declaredPath = match[3];
+        const handler = handlerTypes.get(filePath, receiver, method, declaredPath);
 
         // A router mounted more than once is reachable under every prefix
         mounts.prefixesFor(path.normalize(filePath), receiver).forEach((prefix) => {
@@ -505,6 +538,8 @@ class RouteScanner {
             path: routePath.replace(/:([^/]+)/g, '{$1}'),
             file: path.basename(filePath),
             version,
+            ...(handler?.request && { requestSchema: handler.request }),
+            ...(handler?.response && { responseSchema: handler.response }),
           });
 
           if (this.options.debugMode) {
@@ -547,10 +582,13 @@ class RouteScanner {
 // ============================================================================
 
 class InterfaceScanner {
+  private converter = new SchemaConverter(new Map());
+
   constructor(private options: Required<AutoSwaggerOptions>) {}
 
   scan(): Map<string, any> {
     const interfaces = new Map<string, any>();
+    this.converter = new SchemaConverter(interfaces);
     const searchDirs = this.getSearchDirectories();
 
     for (const dir of searchDirs) {
@@ -642,107 +680,23 @@ class InterfaceScanner {
     return files;
   }
 
-  private isValidInterfaceName(name: string): boolean {
-    const builtInPrefixes = ['CSS', 'HTML', 'SVG', 'WebGL', 'Audio', 'Video', 'DOM'];
-    return !builtInPrefixes.some((prefix) => name.startsWith(prefix));
-  }
-
-  private addSchema(interfaces: Map<string, any>, name: string, type: any, filePath: string): void {
-    if (!this.isValidInterfaceName(name)) return;
+  private addSchema(
+    interfaces: Map<string, any>,
+    name: string,
+    type: Type,
+    filePath: string
+  ): void {
+    if (!isValidSchemaName(name)) return;
 
     try {
-      interfaces.set(name, this.parseType(type, new Set([name])));
+      this.converter.register(name, type);
 
-      if (this.options.debugMode) {
+      if (this.options.debugMode && interfaces.has(name)) {
         console.log(`  Interface: ${name}`);
       }
     } catch (error) {
       this.warn(`Could not parse type ${name} in ${filePath}`, error);
     }
-  }
-
-  private parseType(type: any, seen: Set<string>): any {
-    if (type.isString()) return { type: 'string' };
-    if (type.isNumber()) return { type: 'number' };
-    if (type.isBoolean()) return { type: 'boolean' };
-    if (type.isNull() || type.isUndefined()) return {};
-    if (type.isStringLiteral()) return { type: 'string', enum: [type.getLiteralValue()] };
-    if (type.isNumberLiteral()) return { type: 'number', enum: [type.getLiteralValue()] };
-
-    if (type.isArray()) {
-      return {
-        type: 'array',
-        items: this.parseType(type.getArrayElementType(), seen),
-      };
-    }
-
-    if (type.isUnion()) {
-      const unionTypes = type.getUnionTypes();
-      const hasNull = unionTypes.some((member: any) => member.isNull());
-      const nonNullableTypes = unionTypes.filter(
-        (member: any) => !member.isNull() && !member.isUndefined()
-      );
-      const schemas = nonNullableTypes.map((member: any) => this.parseType(member, seen));
-      const schema = schemas.length === 1 ? schemas[0] : { oneOf: schemas };
-      if (hasNull) {
-        return { ...schema, nullable: true };
-      }
-      return schema;
-    }
-
-    if (type.isIntersection()) {
-      return {
-        allOf: type.getIntersectionTypes().map((member: any) => this.parseType(member, seen)),
-      };
-    }
-
-    if (type.getText() === 'Date') {
-      return { type: 'string', format: 'date-time' };
-    }
-
-    const symbolName = type.getSymbol()?.getName();
-    if (
-      symbolName &&
-      !symbolName.startsWith('__') &&
-      !seen.has(symbolName) &&
-      this.isValidInterfaceName(symbolName)
-    ) {
-      return { $ref: `#/components/schemas/${symbolName}` };
-    }
-
-    const properties = type.getProperties?.() || [];
-    if (properties.length > 0) {
-      return this.parseProperties(properties, seen);
-    }
-
-    return { type: 'object' };
-  }
-
-  private parseProperties(propertySymbols: any[], seen: Set<string>): any {
-    const schemaProperties: Record<string, any> = {};
-    const required: string[] = [];
-
-    propertySymbols.forEach((prop: any) => {
-      const propName = prop.getName();
-      const declaration = prop.getDeclarations?.()[0];
-      const propType = prop.getType
-        ? prop.getType()
-        : declaration
-          ? prop.getTypeAtLocation(declaration)
-          : undefined;
-      schemaProperties[propName] = propType ? this.parseType(propType, seen) : { type: 'object' };
-
-      const isOptional = prop.hasQuestionToken?.() || prop.isOptional?.() || false;
-      if (!isOptional) {
-        required.push(propName);
-      }
-    });
-
-    return {
-      type: 'object',
-      properties: schemaProperties,
-      ...(required.length > 0 && { required }),
-    };
   }
 
   private warn(message: string, error?: unknown): void {
@@ -821,7 +775,7 @@ class SpecBuilder {
         required: true,
         content: {
           'application/json': {
-            schema: { type: 'object' },
+            schema: route.requestSchema ?? { type: 'object' },
           },
         },
       };
@@ -833,7 +787,7 @@ class SpecBuilder {
         description: 'Success',
         content: {
           'application/json': {
-            schema: { type: 'object' },
+            schema: route.responseSchema ?? { type: 'object' },
           },
         },
       },
@@ -884,15 +838,23 @@ class SpecBuilder {
           this.getRouteNameCandidates(route)
         );
 
+        // Types written on the handler win over naming conventions
+        const explicit = this.routes.find((r) => r.path === route && r.method === method);
+
         // Map request
-        if (reqName && this.interfaces.has(reqName) && paths[route][method].requestBody) {
+        if (
+          !explicit?.requestSchema &&
+          reqName &&
+          this.interfaces.has(reqName) &&
+          paths[route][method].requestBody
+        ) {
           paths[route][method].requestBody.content['application/json'].schema = {
             $ref: `#/components/schemas/${reqName}`,
           };
         }
 
         // Map response
-        if (resName && this.interfaces.has(resName)) {
+        if (!explicit?.responseSchema && resName && this.interfaces.has(resName)) {
           paths[route][method].responses['200'].content['application/json'].schema = {
             $ref: `#/components/schemas/${resName}`,
           };
