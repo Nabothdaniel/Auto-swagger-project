@@ -5,6 +5,8 @@ export interface AutoSwaggerOptions {
   docsRoute?: string;
   debugMode?: boolean;
   routesDir?: string;
+  /** Extra directories to scan for interfaces and type aliases, besides routesDir. */
+  typesDir?: string | string[];
   servers?: ServerConfig[];
   watchForChanges?: boolean;
   apiVersions?: ApiVersion[];
