@@ -12,6 +12,7 @@ export interface AutoSwaggerOptions {
   includeOnly?: string[];
   customSchemas?: Record<string, any>;
   securitySchemes?: Record<string, any>;
+  inferHandlerTypes?: boolean;
 }
 
 export interface ServerConfig {
@@ -30,6 +31,8 @@ export interface RouteInfo {
   method: string;
   file?: string;
   version?: string;
+  requestSchema?: Record<string, any>;
+  responseSchema?: Record<string, any>;
 }
 
 export interface SwaggerSpec {
