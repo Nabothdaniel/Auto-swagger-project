@@ -1,6 +1,6 @@
 {
   "name": "@nabothdaniel/express-auto-doc-ts",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Automatically generate OpenAPI/Swagger documentation from Express routes with TypeScript support",
   "repository": {
     "type": "git",

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-12
+
 ### Added
 
 - Add the `typesDir` option, a path or list of paths scanned for interfaces and type aliases in addition to `routesDir`. Types kept in `src/types` or `src/models` now reach `components.schemas` and the naming-convention links without living in the routes directory. A missing directory logs a warning. Watch mode also watches these directories.
