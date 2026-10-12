@@ -11,6 +11,9 @@ TypeScript types. Keep the zero-manual-annotation workflow central to changes.
   OpenAPI builder.
 - `src/mounts.ts`: resolves `app.use()` and `router.use()` prefixes for scanned
   route files.
+- `src/routes.ts`: finds `router.<method>()` calls and `router.route()` chains in
+  route files with the TypeScript syntax tree.
+- `src/responses.ts`: reads the numeric status codes a handler sends.
 - `src/handlers.ts`: reads request and response body types from route handler
   signatures with the TypeScript checker.
 - `src/schema.ts`: converts ts-morph types to OpenAPI schemas and registers named

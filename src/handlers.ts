@@ -14,6 +14,7 @@ import { SchemaConverter } from './schema';
 export interface HandlerSchemas {
   request?: any;
   response?: any;
+  statusCodes?: number[];
 }
 
 // Positions of the body types in Request<Params, ResBody, ReqBody, Query> and
@@ -116,10 +117,11 @@ function collectHandlerTypes(
 ): void {
   const filePath = sourceFile.getFilePath();
 
-  findRouteCalls(sourceFile).forEach((route) => {
+  findRouteCalls(sourceFile, true).forEach((route) => {
     try {
       const schemas = readHandlerSchemas(route.handlers[route.handlers.length - 1], converter);
-      if (schemas.request || schemas.response) {
+      if (route.statusCodes) schemas.statusCodes = route.statusCodes;
+      if (schemas.request || schemas.response || schemas.statusCodes) {
         table.set(filePath, route.receiver, route.method, route.path, schemas);
       }
     } catch (error) {
