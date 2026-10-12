@@ -5,6 +5,8 @@ export interface AutoSwaggerOptions {
   docsRoute?: string;
   debugMode?: boolean;
   routesDir?: string;
+  /** Extra directories to scan for interfaces and type aliases, besides routesDir. */
+  typesDir?: string | string[];
   servers?: ServerConfig[];
   watchForChanges?: boolean;
   apiVersions?: ApiVersion[];
@@ -33,6 +35,8 @@ export interface RouteInfo {
   version?: string;
   requestSchema?: Record<string, any>;
   responseSchema?: Record<string, any>;
+  /** Status codes the handler sends, read from numeric literals. Defaults to 200. */
+  statusCodes?: number[];
 }
 
 export interface SwaggerSpec {

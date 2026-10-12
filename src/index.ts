@@ -33,6 +33,7 @@
  */
 
 import { Express } from 'express';
+import { STATUS_CODES } from 'http';
 import swaggerUi from 'swagger-ui-express';
 import { Project, Type } from 'ts-morph';
 import path from 'path';
@@ -218,6 +219,7 @@ export class AutoSwagger extends EventEmitter {
       docsRoute: options.docsRoute || '/docs',
       debugMode: options.debugMode || false,
       routesDir: options.routesDir || '',
+      typesDir: options.typesDir || [],
       servers: options.servers || [
         { url: 'http://localhost:3000', description: 'Development server' },
       ],
@@ -317,14 +319,16 @@ export class AutoSwagger extends EventEmitter {
   }
 
   private getSearchDirectories(): string[] {
+    const typeDirs = resolveTypesDirectories(this.options.typesDir);
     if (this.options.routesDir) {
-      return [path.resolve(process.cwd(), this.options.routesDir)];
+      return [path.resolve(process.cwd(), this.options.routesDir), ...typeDirs];
     }
     return [
       path.join(process.cwd(), 'routes'),
       path.join(process.cwd(), 'src', 'routes'),
       path.join(process.cwd(), 'src', 'api'),
       path.join(process.cwd(), 'api'),
+      ...typeDirs,
     ];
   }
 
@@ -371,6 +375,15 @@ export class AutoSwagger extends EventEmitter {
 // ============================================================================
 // Route Scanner Module
 // ============================================================================
+
+/** Absolute paths for the `typesDir` option, which accepts one path or a list. */
+function resolveTypesDirectories(typesDir: string | string[]): string[] {
+  const dirs = (Array.isArray(typesDir) ? typesDir : [typesDir]).filter(Boolean);
+  return [...new Set(dirs.map((dir) => path.resolve(process.cwd(), dir)))];
+}
+
+// Success statuses that never carry a body
+const BODYLESS_STATUS_CODES = [204, 205];
 
 class RouteScanner {
   /** Named schemas found while resolving handler types. */
@@ -517,8 +530,11 @@ class RouteScanner {
     try {
       const sourceFile = project.addSourceFileAtPath(filePath);
 
-      findRouteCalls(sourceFile).forEach(({ receiver, method, path: declaredPath }) => {
+      findRouteCalls(sourceFile).forEach((route) => {
+        const { receiver, method, path: declaredPath } = route;
         const handler = handlerTypes.get(filePath, receiver, method, declaredPath);
+        // The checker-backed table also follows imported controllers
+        const statusCodes = handler?.statusCodes ?? route.statusCodes;
 
         // A router mounted more than once is reachable under every prefix
         mounts.prefixesFor(path.normalize(filePath), receiver).forEach((prefix) => {
@@ -535,6 +551,7 @@ class RouteScanner {
             version,
             ...(handler?.request && { requestSchema: handler.request }),
             ...(handler?.response && { responseSchema: handler.response }),
+            ...(statusCodes && { statusCodes }),
           });
 
           if (this.options.debugMode) {
@@ -584,50 +601,67 @@ class InterfaceScanner {
   scan(): Map<string, any> {
     const interfaces = new Map<string, any>();
     this.converter = new SchemaConverter(interfaces);
-    const searchDirs = this.getSearchDirectories();
+    const scanned = new Set<string>();
 
-    for (const dir of searchDirs) {
-      if (!fs.existsSync(dir)) continue;
+    // The first directory that holds types is the primary one
+    for (const dir of this.getSearchDirectories()) {
+      if (this.scanDirectory(dir, interfaces, scanned)) break;
+    }
 
-      try {
-        const project = new Project({
-          skipAddingFilesFromTsConfig: true,
-          skipFileDependencyResolution: true,
-          compilerOptions: {
-            strictNullChecks: true,
-          },
-        });
-
-        const files = this.findTsFiles(dir);
-        if (files.length === 0) continue;
-
-        const sourceFiles = project.addSourceFilesAtPaths(files);
-
-        sourceFiles.forEach((file) => {
-          try {
-            file.getInterfaces().forEach((iface) => {
-              this.addSchema(interfaces, iface.getName(), iface.getType(), file.getFilePath());
-            });
-            file.getTypeAliases().forEach((typeAlias) => {
-              this.addSchema(
-                interfaces,
-                typeAlias.getName(),
-                typeAlias.getType(),
-                file.getFilePath()
-              );
-            });
-          } catch (error) {
-            this.warn(`Could not parse types in ${file.getFilePath()}`, error);
-          }
-        });
-
-        break; // Found interfaces, stop searching
-      } catch (error) {
-        // Continue to next directory
+    // Directories from the typesDir option are always added to it
+    for (const dir of resolveTypesDirectories(this.options.typesDir)) {
+      if (!fs.existsSync(dir)) {
+        this.warn(`Types directory not found: ${dir}`);
+        continue;
       }
+      this.scanDirectory(dir, interfaces, scanned);
     }
 
     return interfaces;
+  }
+
+  /** Registers the types declared in `dir`. Returns false when it has no files to read. */
+  private scanDirectory(dir: string, interfaces: Map<string, any>, scanned: Set<string>): boolean {
+    if (!fs.existsSync(dir)) return false;
+    if (scanned.has(dir)) return true;
+
+    try {
+      const project = new Project({
+        skipAddingFilesFromTsConfig: true,
+        skipFileDependencyResolution: true,
+        compilerOptions: {
+          strictNullChecks: true,
+        },
+      });
+
+      const files = this.findTsFiles(dir);
+      if (files.length === 0) return false;
+
+      scanned.add(dir);
+      const sourceFiles = project.addSourceFilesAtPaths(files);
+
+      sourceFiles.forEach((file) => {
+        try {
+          file.getInterfaces().forEach((iface) => {
+            this.addSchema(interfaces, iface.getName(), iface.getType(), file.getFilePath());
+          });
+          file.getTypeAliases().forEach((typeAlias) => {
+            this.addSchema(
+              interfaces,
+              typeAlias.getName(),
+              typeAlias.getType(),
+              file.getFilePath()
+            );
+          });
+        } catch (error) {
+          this.warn(`Could not parse types in ${file.getFilePath()}`, error);
+        }
+      });
+
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   private getSearchDirectories(): string[] {
@@ -654,7 +688,7 @@ class InterfaceScanner {
         const fullPath = path.join(dir, entry.name);
 
         if (entry.isDirectory()) {
-          const skipDirs = ['node_modules', 'dist', 'build', '.git'];
+          const skipDirs = ['node_modules', 'dist', 'build', 'coverage', '.git'];
           if (!skipDirs.includes(entry.name) && !entry.name.startsWith('.')) {
             files.push(...this.findTsFiles(fullPath));
           }
@@ -777,18 +811,33 @@ class SpecBuilder {
     }
 
     // Responses
-    operation.responses = {
-      200: {
-        description: 'Success',
-        content: {
-          'application/json': {
-            schema: route.responseSchema ?? { type: 'object' },
-          },
-        },
-      },
-    };
+    operation.responses = this.buildResponses(route);
 
     return operation;
+  }
+
+  /**
+   * One response per detected status code, or a single 200 when none was found.
+   * Only successful codes that carry a body get JSON content.
+   */
+  private buildResponses(route: RouteInfo): Record<string, any> {
+    const responses: Record<string, any> = {};
+
+    (route.statusCodes?.length ? route.statusCodes : [200]).forEach((code) => {
+      const description = code === 200 ? 'Success' : (STATUS_CODES[code] ?? 'Response');
+      const hasBody = code >= 200 && code < 300 && !BODYLESS_STATUS_CODES.includes(code);
+
+      responses[code] = hasBody
+        ? {
+            description,
+            content: {
+              'application/json': { schema: route.responseSchema ?? { type: 'object' } },
+            },
+          }
+        : { description };
+    });
+
+    return responses;
   }
 
   /**
