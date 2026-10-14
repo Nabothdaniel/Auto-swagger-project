@@ -148,7 +148,14 @@ Each operation lists the status codes its handler sends. These calls are read fr
 - `res.sendStatus(204)` and `res.status(204).end()` document `204 No Content`, without a `content` entry.
 - A bare `res.json()` or `res.send()` documents `200`.
 
-A handler with several calls, such as `404` for a missing record and `200` for the record, gets one response per code. Only numeric literals are read. A computed status such as `res.status(code)` is ignored, and a handler with no readable status keeps a single `200` response.
+A handler with several calls, such as `404` for a missing record and `200` for the record, gets one response per code.
+
+The status can be a literal or a value whose type is known:
+
+- `res.status(found ? 200 : 404)` documents both codes.
+- With `inferHandlerTypes` enabled (the default), constants such as `const CREATED = 201`, enum members such as `HttpStatus.CREATED`, and variables typed as a union such as `200 | 404` are read too.
+
+A status typed as `number`, or as a whole enum such as a `status: HttpStatus` parameter, is ignored rather than guessed. A handler with no readable status keeps a single `200` response.
 
 Inline handlers are always read. Controllers imported from other files, and helpers such as `asyncHandler(fn)`, are followed when `inferHandlerTypes` is enabled, because that is when the TypeScript checker runs.
 

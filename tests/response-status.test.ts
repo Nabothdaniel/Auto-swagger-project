@@ -64,10 +64,36 @@ describe('response status codes', () => {
     });
   });
 
+  it('reads constants and enum members', () => {
+    expect(Object.keys(spec.paths['/orders'].post.responses)).toEqual(['201', '400', '422']);
+    expect(spec.paths['/orders'].post.responses['422'].description).toBe('Unprocessable Entity');
+    const shipped = spec.paths['/orders/{id}/ship'].post.responses;
+    expect(Object.keys(shipped)).toEqual(['202']);
+    expect(shipped['202'].description).toBe('Accepted');
+  });
+
+  it('reads every branch of a conditional status', () => {
+    expect(Object.keys(spec.paths['/orders/{id}'].put.responses)).toEqual(['200', '201']);
+  });
+
+  it('reads a variable whose type is a union of status codes', () => {
+    expect(Object.keys(spec.paths['/orders/{id}'].get.responses)).toEqual(['200', '404']);
+  });
+
+  it('ignores a status typed as number or as a whole enum', () => {
+    // `.end()` still means the request succeeds
+    expect(Object.keys(spec.paths['/orders/{id}'].delete.responses)).toEqual(['200']);
+    expect(Object.keys(spec.paths['/orders'].get.responses)).toEqual(['200']);
+    expect(Object.keys(spec.paths['/orders/{id}'].patch.responses)).toEqual(['200']);
+  });
+
   it('still reads inline handlers when handler type inference is off', async () => {
     const inline = await generate(false);
     expect(Object.keys(inline.paths['/users'].post.responses)).toEqual(['201']);
     // Imported controllers need the checker, so they keep the default
     expect(Object.keys(inline.paths['/accounts'].post.responses)).toEqual(['200']);
+    // Literal conditionals are read from the syntax tree; constants need the checker
+    expect(Object.keys(inline.paths['/orders/{id}'].put.responses)).toEqual(['200', '201']);
+    expect(Object.keys(inline.paths['/orders'].post.responses)).toEqual(['200']);
   });
 });

@@ -1,8 +1,9 @@
 /**
- * Reads the HTTP status codes a route handler sends. Only numeric literals are
- * trusted: `res.status(201)` and `res.sendStatus(204)` add their code, and a
- * bare `res.json()` or `res.send()` means 200. A computed status is ignored
- * rather than guessed.
+ * Reads the HTTP status codes a route handler sends. Only statuses with a known
+ * value are trusted: `res.status(201)` and `res.sendStatus(204)` add their code,
+ * and a bare `res.json()` or `res.send()` means 200. With the type checker,
+ * constants, enum members, and small unions of numeric literals are read too.
+ * A status typed as `number` or as a whole enum is ignored rather than guessed.
  */
 
 import { Node, SyntaxKind } from 'ts-morph';
@@ -11,6 +12,7 @@ import type {
   FunctionDeclaration,
   FunctionExpression,
   MethodDeclaration,
+  Type,
 } from 'ts-morph';
 
 type FunctionLike = ArrowFunction | FunctionExpression | FunctionDeclaration | MethodDeclaration;
@@ -18,6 +20,8 @@ type FunctionLike = ArrowFunction | FunctionExpression | FunctionDeclaration | M
 // Response methods that finish the request with the default 200 status
 const SEND_METHODS = ['json', 'jsonp', 'send', 'end', 'sendFile', 'render'];
 const MAX_DEPTH = 5;
+// A larger union is more likely a catch-all status type than a list of outcomes
+const MAX_UNION_CODES = 10;
 
 /**
  * Status codes sent by `handlers`, ascending, or undefined when none could be
@@ -39,7 +43,7 @@ export function detectStatusCodes(
     if (!fn || !responseName) return;
 
     fn.getDescendantsOfKind(SyntaxKind.CallExpression).forEach((call) => {
-      readStatus(call.getExpression(), call.getArguments(), responseName, codes);
+      readStatus(call.getExpression(), call.getArguments(), responseName, codes, followReferences);
     });
   });
 
@@ -48,7 +52,13 @@ export function detectStatusCodes(
   return [...codes].sort((a, b) => a - b);
 }
 
-function readStatus(callee: Node, args: Node[], responseName: string, codes: Set<number>): void {
+function readStatus(
+  callee: Node,
+  args: Node[],
+  responseName: string,
+  codes: Set<number>,
+  useChecker: boolean
+): void {
   if (!Node.isPropertyAccessExpression(callee)) return;
 
   const receiver = callee.getExpression();
@@ -57,13 +67,53 @@ function readStatus(callee: Node, args: Node[], responseName: string, codes: Set
   const method = callee.getName();
   if (method === 'status' || method === 'sendStatus') {
     const code = args[0];
-    if (code && Node.isNumericLiteral(code)) {
-      const value = code.getLiteralValue();
-      if (Number.isInteger(value) && value >= 100 && value <= 599) codes.add(value);
-    }
+    if (!code) return;
+    statusValues(code, useChecker)
+      .filter((value) => Number.isInteger(value) && value >= 100 && value <= 599)
+      .forEach((value) => codes.add(value));
   } else if (SEND_METHODS.includes(method)) {
     codes.add(200);
   }
+}
+
+/**
+ * Values a status argument can take. Literals and `cond ? 201 : 409` are read
+ * from the syntax tree. Anything else needs the checker: `const CREATED = 201`,
+ * `HttpStatus.CREATED`, and a `200 | 404` union resolve to their literal values.
+ */
+function statusValues(node: Node, useChecker: boolean): number[] {
+  if (Node.isNumericLiteral(node)) return [node.getLiteralValue()];
+
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node)
+  ) {
+    return statusValues(node.getExpression(), useChecker);
+  }
+
+  if (Node.isConditionalExpression(node)) {
+    return [
+      ...statusValues(node.getWhenTrue(), useChecker),
+      ...statusValues(node.getWhenFalse(), useChecker),
+    ];
+  }
+
+  return useChecker ? literalValues(node.getType()) : [];
+}
+
+function literalValues(type: Type): number[] {
+  if (type.isNumberLiteral()) return [type.getLiteralValue() as number];
+
+  // A whole enum means any member could be sent, so none of them is documented
+  if (!type.isUnion() || type.isEnum()) return [];
+
+  const members = type.getUnionTypes();
+  if (members.length > MAX_UNION_CODES || !members.every((member) => member.isNumberLiteral())) {
+    return [];
+  }
+  return members.map((member) => member.getLiteralValue() as number);
 }
 
 function responseParameter(fn: FunctionLike): string | undefined {

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Read status codes from constants, enum members, and unions of numeric literals when `inferHandlerTypes` is enabled, and from conditional expressions such as `res.status(found ? 200 : 404)` in every mode. A status typed as `number` or as a whole enum is still ignored. Routes that send these statuses now document the real codes instead of a single `200`.
+
 ## [1.2.0] - 2026-10-12
 
 ### Added
