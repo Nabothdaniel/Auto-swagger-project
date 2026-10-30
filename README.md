@@ -9,6 +9,82 @@ Express Auto Swagger generates an OpenAPI 3 document from an Express and TypeScr
 
 The goal is to keep API documentation close to the code that defines the API. You write ordinary Express routes and TypeScript types. The package turns them into a usable specification without requiring a second set of hand-written annotations.
 
+## At a glance
+
+This route file, with no comments or decorators:
+
+```typescript
+import { Router, Request, Response } from 'express';
+
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+}
+
+type ProductInput = Omit<Product, 'id'>;
+
+const router = Router();
+
+router.post('/products', (req: Request<{}, Product, ProductInput>, res: Response<Product>) => {
+  res.status(201).json({ id: 'p_1', ...req.body });
+});
+
+export default router;
+```
+
+generates this operation and these schemas:
+
+```json
+{
+  "paths": {
+    "/products": {
+      "post": {
+        "summary": "POST /products",
+        "tags": ["products"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ProductInput" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Product" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "price": { "type": "number" }
+        },
+        "required": ["id", "name", "price"]
+      },
+      "ProductInput": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "price": { "type": "number" }
+        },
+        "required": ["name", "price"]
+      }
+    }
+  }
+}
+```
+
+The `201` comes from `res.status(201)`, the request body from the third type argument of `Request`, and `ProductInput` is expanded from `Omit<Product, 'id'>`.
+
 ## What it provides
 
 - Route discovery for TypeScript and JavaScript files in common route folders.
@@ -258,6 +334,16 @@ try {
 ```
 
 The option and document types (`AutoSwaggerOptions`, `ServerConfig`, `ApiVersion`, `RouteInfo`, `SwaggerSpec`) are exported from the package entry point.
+
+## Known limitations
+
+These are not supported yet. Pull requests are welcome; see the open issues.
+
+- Query parameters are not documented. The fourth type argument of `Request<Params, ResBody, ReqBody, Query>` is not read.
+- Path parameters are always documented as `type: string`, even when the first type argument of `Request` gives them another type.
+- The specification is served only through Swagger UI and `getSpec()`. There is no route that returns the raw JSON document for tools such as Postman or client generators.
+- Schemas declared with validation libraries such as zod or joi are not read. Only TypeScript interfaces and type aliases produce schemas.
+- Handler types are resolved only when `@types/express` can be found from the scanned files. Otherwise the scanner falls back to naming conventions, and bodies without a matching type are documented as `{ "type": "object" }`.
 
 ## Why not swagger-jsdoc or swagger-autogen?
 
