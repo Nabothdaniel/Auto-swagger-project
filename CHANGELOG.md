@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Document path parameters from the handler's `Request<Params, ...>` (or `RequestHandler<...>`) type argument. A literal-union parameter such as `status: 'open' | 'shipped'` is emitted as the matching schema instead of a bare `string`, while untyped parameters keep the existing `string` schema. Path values remain strings at runtime, so non-string parameter types fall back to `string`.
+
 ## [1.2.0] - 2026-10-12
 
 ### Added

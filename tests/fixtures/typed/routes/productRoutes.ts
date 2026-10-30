@@ -1,9 +1,11 @@
 import { Router, RequestHandler } from 'express';
 import {
   createProduct,
+  getOrder,
   listProducts,
   patchProduct,
   untyped,
+  untypedParam,
 } from '../controllers/productController';
 import { Product } from '../types/product';
 
@@ -23,6 +25,8 @@ router.patch('/products/:id', patchProduct);
 router.get('/products/:id', ((req, res) => {
   res.json({ id: req.params.id, createdAt: new Date(), name: 'n', price: 1, status: 'live' });
 }) satisfies RequestHandler<{ id: string }, Product>);
+router.get('/orders/:status/:id', getOrder);
+router.get('/items/:id', untypedParam);
 router.get('/untyped', untyped);
 
 export default router;

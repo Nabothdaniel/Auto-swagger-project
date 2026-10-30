@@ -14,6 +14,8 @@ import { SchemaConverter } from './schema';
 export interface HandlerSchemas {
   request?: any;
   response?: any;
+  /** OpenAPI schemas for path parameters, keyed by parameter name. */
+  params?: Record<string, any>;
   statusCodes?: number[];
 }
 
@@ -146,7 +148,28 @@ function readHandlerSchemas(handler: Node, converter: SchemaConverter): HandlerS
   const responseBody =
     specified(responseArgs[RESPONSE_RES_BODY]) ?? specified(requestArgs[REQUEST_RES_BODY]);
 
+  // Path parameters come from the first type argument of Request<Params, ...>
+  // (or RequestHandler<Params, ...>). Read each property's schema so literal
+  // unions and branded string types are documented instead of a bare string.
+  const paramsType = specified(requestArgs[0]);
+  let params: Record<string, any> | undefined;
+  if (paramsType) {
+    const properties = paramsType.getProperties();
+    if (properties.length > 0) {
+      params = {};
+      properties.forEach((prop) => {
+        const declaration = prop.getDeclarations()[0];
+        const propType = declaration ? prop.getTypeAtLocation(declaration) : undefined;
+        if (propType) {
+          params![prop.getName()] = converter.reference(propType);
+        }
+      });
+      if (Object.keys(params).length === 0) params = undefined;
+    }
+  }
+
   return {
+    ...(params && { params }),
     ...(requestBody && { request: converter.reference(requestBody) }),
     ...(responseBody && { response: converter.reference(responseBody) }),
   };
