@@ -35,6 +35,12 @@ export interface RouteInfo {
   version?: string;
   requestSchema?: Record<string, any>;
   responseSchema?: Record<string, any>;
+  /**
+   * OpenAPI schemas for the route's path parameters, keyed by parameter name.
+   * Derived from the handler's `Request<Params, ...>` (or `RequestHandler<...>`)
+   * type argument. Missing entries fall back to `{ type: 'string' }`.
+   */
+  paramSchemas?: Record<string, any>;
   /** Status codes the handler sends, read from numeric literals. Defaults to 200. */
   statusCodes?: number[];
 }

@@ -51,6 +51,19 @@ describe('handler type inference', () => {
     expect(ok(spec.paths['/products/{id}'].get)).toEqual(ref('Product'));
   });
 
+  it('documents a literal-union path parameter from the handler type', () => {
+    expect(spec.paths['/orders/{status}/{id}'].get.parameters).toEqual([
+      { name: 'status', in: 'path', required: true, schema: ref('OrderStatus') },
+      { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+    ]);
+  });
+
+  it('keeps a string schema for an untyped path parameter', () => {
+    expect(spec.paths['/items/{id}'].get.parameters).toEqual([
+      { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+    ]);
+  });
+
   it('registers referenced types that live outside routesDir', () => {
     const schemas = spec.components.schemas;
     expect(schemas.ProductInput).toEqual({

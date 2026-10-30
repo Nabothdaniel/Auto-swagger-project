@@ -1,5 +1,5 @@
 import { Request, RequestHandler, Response } from 'express';
-import { Product, ProductInput, ProductPatch } from '../types/product';
+import { OrderStatus, Product, ProductInput, ProductPatch } from '../types/product';
 
 export const listProducts = (_req: Request, res: Response<Product[]>) => {
   res.json([]);
@@ -19,3 +19,14 @@ export const patchProduct: RequestHandler<{ id: string }, Product, ProductPatch>
 export function untyped(_req: Request, res: Response) {
   res.json({});
 }
+
+export const getOrder = (
+  req: Request<{ status: OrderStatus; id: string }, Product>,
+  res: Response<Product>
+) => {
+  res.json({ id: req.params.id, createdAt: new Date(), name: 'n', price: 1, status: 'live' });
+};
+
+export const untypedParam = (_req: Request, res: Response) => {
+  res.json({});
+};

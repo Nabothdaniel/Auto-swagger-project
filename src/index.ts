@@ -551,6 +551,7 @@ class RouteScanner {
             version,
             ...(handler?.request && { requestSchema: handler.request }),
             ...(handler?.response && { responseSchema: handler.response }),
+            ...(handler?.params && { paramSchemas: handler.params }),
             ...(statusCodes && { statusCodes }),
           });
 
@@ -738,6 +739,24 @@ class InterfaceScanner {
 // Spec Builder Module
 // ============================================================================
 
+/**
+ * True when a schema is string-like: a plain string, a string literal, a
+ * named/branded type, or a union/intersection of string-like schemas. Path
+ * parameters are always strings at runtime, so non-string schemas fall back to
+ * `{ type: 'string' }`.
+ */
+function isStringLikeSchema(schema: any): boolean {
+  if (!schema || typeof schema !== 'object') return false;
+  if (schema.$ref) return true;
+  if (schema.type === 'string') return true;
+  for (const key of ['oneOf', 'anyOf', 'allOf'] as const) {
+    if (Array.isArray(schema[key])) {
+      return schema[key].every(isStringLikeSchema);
+    }
+  }
+  return false;
+}
+
 class SpecBuilder {
   constructor(
     private options: Required<AutoSwaggerOptions>,
@@ -787,15 +806,22 @@ class SpecBuilder {
       tags: [this.getTag(route.path)],
     };
 
-    // Path parameters
+    // Path parameters. Use the schema read from the handler's params type when
+    // it is string-like (string, literal union of strings, branded string type);
+    // path values are always strings at runtime, so other types fall back to
+    // `{ type: 'string' }`.
     const pathParams = route.path.match(/\{([^}]+)\}/g);
     if (pathParams) {
-      operation.parameters = pathParams.map((param) => ({
-        name: param.slice(1, -1),
-        in: 'path',
-        required: true,
-        schema: { type: 'string' },
-      }));
+      operation.parameters = pathParams.map((param) => {
+        const name = param.slice(1, -1);
+        const schema = route.paramSchemas?.[name];
+        return {
+          name,
+          in: 'path',
+          required: true,
+          schema: schema && isStringLikeSchema(schema) ? schema : { type: 'string' },
+        };
+      });
     }
 
     // Request body
